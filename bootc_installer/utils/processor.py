@@ -206,6 +206,7 @@ class Processor:
 
         # --- SELinux / unified storage / composefs / image type ---
         selinux_disabled = sys_recipe.get("selinuxDisabled", False)
+        cosign_pub_key = sys_recipe.get("cosignPubKey", "")
         unified_storage = sys_recipe.get("unifiedStorage", True)
         composefs_backend = bool(merged.get("composefs_backend", False))
         image_type = merged.get("image_type", "bootc") or "bootc"
@@ -288,6 +289,8 @@ class Processor:
             recipe["imageType"] = image_type
         if flatpak_var_path:
             recipe["flatpakVarPath"] = flatpak_var_path
+        if cosign_pub_key:
+            recipe["cosignPubKey"] = cosign_pub_key
         if "slurp" in merged and merged["slurp"] is not None:
             recipe["slurp"] = merged["slurp"]
         # Easter egg: always attempt to rescue wallpapers from existing Windows installs
