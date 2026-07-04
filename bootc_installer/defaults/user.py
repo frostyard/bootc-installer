@@ -11,8 +11,10 @@ _IN_FLATPAK = os.path.exists("/.flatpak-info")
 _ETC = "/run/host/etc" if _IN_FLATPAK else "/etc"
 _IMAGES_JSON = f"{_ETC}/bootc-installer/images.json"
 
-# Groups added to every created user.
-_DEFAULT_GROUPS = ["wheel", "docker", "incus-admin", "libvirt", "dialout"]
+# Groups added to every created user. useradd fails on groups that do not
+# exist in the target image, so list only groups Snow (Debian) ships:
+# "sudo" is Debian's admin group (Fedora uses "wheel"); Snow has no libvirt.
+_DEFAULT_GROUPS = ["sudo", "docker", "incus-admin", "dialout"]
 
 
 @Gtk.Template(resource_path="/org/bootcinstaller/Installer/gtk/default-users.ui")
