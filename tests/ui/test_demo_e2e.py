@@ -171,3 +171,22 @@ class TestDemoEndToEnd:
             _pump()
             for patcher in reversed(patchers):
                 patcher.stop()
+
+    def test_welcome_install_row_uses_recipe_distro_name(self):
+        """The welcome action row must be recipe-branded like the header —
+        regression for the row showing 'Install Bluefin' on Snow ISOs."""
+        window, scheduler, patchers = _make_window({})
+
+        try:
+            from bootc_installer.defaults.welcome import BootcDefaultWelcome
+
+            builder = getattr(window, "_BootcWindow__builder")
+            welcome = next(
+                w for w in builder.widgets if isinstance(w, BootcDefaultWelcome)
+            )
+            assert welcome.row_install.get_title() == "Install Snow Linux"
+        finally:
+            window.destroy()
+            _pump()
+            for patcher in reversed(patchers):
+                patcher.stop()

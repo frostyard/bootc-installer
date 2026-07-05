@@ -95,6 +95,12 @@ class BootcDefaultWelcome(Adw.Bin):
         if welcome_subtitle:
             self.page_header.subtitle = welcome_subtitle
 
+        # The install row title is recipe-driven like the header; the .blp
+        # string is only the fallback when the recipe has no distro_name.
+        distro_name = self.__distro_info.get("name")
+        if distro_name:
+            self.row_install.set_title(f"Install {distro_name}")
+
         try:
             self.row_bluetooth.set_visible(_needs_bluetooth_pairing())
         except Exception:
