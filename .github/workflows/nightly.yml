@@ -123,10 +123,6 @@ jobs:
           ref: ${{ matrix.branch }}
           submodules: recursive
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
       - name: Install system dependencies
         run: |
           sudo apt-get update -qq
