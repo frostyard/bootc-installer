@@ -131,14 +131,18 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y \
+            python3-pytest \
             python3-gi \
             python3-gi-cairo \
             gir1.2-gtk-4.0 \
             gir1.2-adw-1 \
+            gir1.2-vte-3.91 \
             blueprint-compiler \
             meson \
             ninja-build \
             libglib2.0-dev \
+            desktop-file-utils \
+            appstream \
             gettext \
             xvfb
 
