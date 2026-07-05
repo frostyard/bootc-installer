@@ -1,5 +1,17 @@
 name: Build Multi-Variant Flatpaks
 
+# frostyard fork notes (deviations from projectbluefin/bootc-installer):
+#
+# This workflow is build-validation only. Upstream also published the
+# stable-app-id bundle to the rolling `latest-dev` release from here,
+# racing with flatpak.yml (which owns `latest-dev` and publishes the
+# .Devel bundle that dakota-iso's dev channel downloads). Whichever
+# workflow finished last won, and upstream's delete-and-recreate could
+# leave the release missing or holding the wrong asset. All release
+# publishing now lives in flatpak.yml; this workflow only proves the
+# stable manifest builds with a plain apt flatpak-builder on every
+# dev/prod push. Actions are pinned to commit SHAs.
+
 on:
   push:
     branches:
@@ -8,10 +20,6 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
-
-env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
   build-variants:
@@ -23,11 +31,10 @@ jobs:
             manifest: flatpak/org.bootcinstaller.Installer.json
     runs-on: ubuntu-latest
     permissions:
-      contents: write
-      packages: write
+      contents: read
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           submodules: true
 
@@ -65,50 +72,8 @@ jobs:
             ${{ matrix.variant.app_id }}.flatpak \
             ${{ matrix.variant.app_id }}
 
-      - name: Determine release tag
-        id: release_tag
-        run: |
-          if [[ "${{ github.ref }}" == "refs/tags/v"* ]]; then
-            TAG="${{ github.ref_name }}"
-          elif [[ "${{ github.ref }}" == "refs/heads/prod" ]]; then
-            # Stable channel uses /releases/latest/download/ — no rolling tag needed.
-            TAG="skip"
-          else
-            TAG="latest-dev"
-          fi
-          echo "tag=$TAG" >> $GITHUB_OUTPUT
-          echo "Build tag: $TAG"
-
-      - name: Create or update release
-        if: "!startsWith(github.ref, 'refs/tags/') && steps.release_tag.outputs.tag != 'skip'"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_TAG: ${{ steps.release_tag.outputs.tag }}
-        run: |
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          # Delete old release (ignore errors — may not exist or tag may be protected).
-          gh release delete $RELEASE_TAG --yes --cleanup-tag 2>&1 || true
-          git push origin :refs/tags/$RELEASE_TAG 2>&1 || true
-          # Create or update the release. Use a two-step approach:
-          # 1. Try to create. If it fails because tag already exists (protected tag),
-          #    fall through to step 2.
-          # 2. Ensure the release exists (create it if needed), then upload assets.
-          if ! gh release create $RELEASE_TAG \
-              --title "Build $RELEASE_TAG" \
-              --prerelease \
-              --notes "Multi-variant bootc-installer Flatpak build" \
-              ${{ matrix.variant.app_id }}.flatpak; then
-            echo "gh release create failed — ensuring release exists and uploading asset"
-            # Make sure a release exists for the tag (in case tag exists but release doesn't)
-            gh release create $RELEASE_TAG \
-              --title "Build $RELEASE_TAG" \
-              --prerelease \
-              --notes "Multi-variant bootc-installer Flatpak build" 2>/dev/null || true
-            gh release upload $RELEASE_TAG ${{ matrix.variant.app_id }}.flatpak --clobber
-          fi
-
       - name: Upload Flatpak to artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ${{ matrix.variant.app_id }}.flatpak
           path: ${{ matrix.variant.app_id }}.flatpak
@@ -120,13 +85,15 @@ jobs:
     if: always()
     steps:
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
 
       - name: Create release summary
         run: |
-          echo "## 📦 Flatpak Build Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Built Variants:" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ GNOME: org.bootcinstaller.Installer" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "All variants available in [Releases](../releases)" >> $GITHUB_STEP_SUMMARY
+          {
+            echo "## Flatpak Build Summary"
+            echo ""
+            echo "### Built Variants:"
+            echo "- GNOME: org.bootcinstaller.Installer"
+            echo ""
+            echo "Bundles are uploaded as workflow artifacts; releases are published by flatpak.yml"
+          } >> "$GITHUB_STEP_SUMMARY"

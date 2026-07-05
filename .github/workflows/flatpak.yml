@@ -1,5 +1,26 @@
 name: Flatpak
 
+# frostyard fork notes (deviations from projectbluefin/bootc-installer):
+#
+# 1. Actions are pinned to commit SHAs (upstream pins to floating tags).
+# 2. The dev-channel publish updates the existing `latest-dev` release
+#    in place instead of upstream's delete-and-recreate pattern.
+#    Upstream's pattern permanently broke their dev channel: once GitHub
+#    immutable releases banned reuse of the deleted tag name,
+#    `gh release create latest-dev` fails forever (see projectbluefin
+#    run 28007593013). Update-in-place never deletes the release or tag.
+#    Do NOT enable immutable releases on this repository — the rolling
+#    `latest-dev` release requires mutable assets.
+# 3. workflow_dispatch added for manual runs (dispatching on `dev`
+#    publishes latest-dev; on any other ref it is build-only).
+#
+# Publishing contract (consumed by frostyard/dakota-iso
+# live/src/install-flatpaks.sh via INSTALLER_REPO):
+#   dev channel:    releases/download/latest-dev/org.bootcinstaller.Installer.Devel.flatpak
+#   stable channel: releases/latest/download/org.bootcinstaller.Installer.flatpak
+#     (created by pushing a v* tag; /releases/latest resolves to the
+#      newest non-prerelease release)
+
 on:
   push:
     branches: [prod, dev]
@@ -7,12 +28,14 @@ on:
   pull_request:
     branches: [prod, dev]
   merge_group:
+  workflow_dispatch:
 
 jobs:
   production:
     name: Build (production)
     if: >-
       github.event_name == 'pull_request' ||
+      github.event_name == 'workflow_dispatch' ||
       startsWith(github.ref, 'refs/tags/') ||
       github.ref == 'refs/heads/prod'
     runs-on: ubuntu-latest
@@ -23,40 +46,26 @@ jobs:
       options: --privileged
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           submodules: recursive
 
-      - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+      - uses: flatpak/flatpak-github-actions/flatpak-builder@401fe28a8384095fc1531b9d320b292f0ee45adb # v6.7
         with:
           bundle: org.bootcinstaller.Installer.flatpak
           manifest-path: flatpak/org.bootcinstaller.Installer.json
           cache-key: flatpak-builder-production-${{ github.sha }}
 
       - name: Upload bundle as artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: org.bootcinstaller.Installer.flatpak
           path: org.bootcinstaller.Installer.flatpak
           retention-days: 30
 
-      - name: Attach stable asset to latest versioned release (prod branch)
-        if: github.ref == 'refs/heads/prod'
-        run: |
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          # The stable channel uses GitHub's /releases/latest/download/ redirect,
-          # which auto-resolves to the newest non-prerelease versioned tag.
-          # We no longer maintain a rolling 'latest-stable' tag — its name is
-          # permanently banned by a GitHub ruleset after an immutable release.
-          # The versioned tag release already has the asset attached by the
-          # 'Attach bundle to tagged release' step below; nothing to do here.
-          echo "Stable channel served via releases/latest/download/ → $(gh release list --repo ${{ github.repository }} --limit 1 --json tagName --jq '.[0].tagName')"
-        env:
-          GH_TOKEN: ${{ github.token }}
-
       - name: Attach bundle to tagged release
         if: startsWith(github.ref, 'refs/tags/')
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: tagged-org.bootcinstaller.Installer.flatpak
           path: org.bootcinstaller.Installer.flatpak
@@ -66,6 +75,7 @@ jobs:
     name: Build (devel)
     if: >-
       github.event_name == 'pull_request' ||
+      github.event_name == 'workflow_dispatch' ||
       startsWith(github.ref, 'refs/tags/') ||
       github.ref == 'refs/heads/dev'
     runs-on: ubuntu-latest
@@ -76,53 +86,53 @@ jobs:
       options: --privileged
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           submodules: recursive
 
-      - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+      - uses: flatpak/flatpak-github-actions/flatpak-builder@401fe28a8384095fc1531b9d320b292f0ee45adb # v6.7
         with:
           bundle: org.bootcinstaller.Installer.Devel.flatpak
           manifest-path: flatpak/org.bootcinstaller.Installer.Devel.json
           cache-key: flatpak-builder-devel-${{ github.sha }}
 
       - name: Upload bundle as artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: org.bootcinstaller.Installer.Devel.flatpak
           path: org.bootcinstaller.Installer.Devel.flatpak
           retention-days: 30
 
-      - name: Delete existing latest-dev release (dev branch)
-        if: github.ref == 'refs/heads/dev'
-        run: |
-          gh release delete latest-dev --yes --cleanup-tag 2>&1 || true
-          git push origin :refs/tags/latest-dev 2>&1 || true
-        env:
-          GH_TOKEN: ${{ github.token }}
-
       - name: Publish dev pre-release (dev branch)
         if: github.ref == 'refs/heads/dev'
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          if gh release create latest-dev \
+          NOTES="Latest build from the \`dev\` branch (commit ${GITHUB_SHA}). May be unstable."
+          # Update-in-place: never delete the release or its tag (see the
+          # frostyard fork notes at the top of this file). --clobber
+          # replaces the constant-name asset atomically.
+          if gh release view latest-dev >/dev/null 2>&1; then
+            gh release upload latest-dev org.bootcinstaller.Installer.Devel.flatpak --clobber
+            gh release edit latest-dev \
+              --prerelease \
+              --title "Dev Build" \
+              --notes "$NOTES"
+            echo "Release assets updated"
+          else
+            gh release create latest-dev \
               --title "Dev Build" \
               --prerelease \
-              --notes "Latest build from the \`dev\` branch. May be unstable." \
-              org.bootcinstaller.Installer.Devel.flatpak 2>/dev/null; then
+              --target "$GITHUB_SHA" \
+              --notes "$NOTES" \
+              org.bootcinstaller.Installer.Devel.flatpak
             echo "Release created"
-          else
-            gh release view latest-dev --json assets --jq '.assets[].name' | \
-              xargs -I{} gh release delete-asset latest-dev {} --yes 2>/dev/null || true
-            gh release upload latest-dev org.bootcinstaller.Installer.Devel.flatpak --clobber
-            echo "Release assets updated"
           fi
         env:
           GH_TOKEN: ${{ github.token }}
 
       - name: Upload devel bundle for tagged release
         if: startsWith(github.ref, 'refs/tags/')
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: tagged-org.bootcinstaller.Installer.Devel.flatpak
           path: org.bootcinstaller.Installer.Devel.flatpak
@@ -137,18 +147,17 @@ jobs:
       contents: write
     steps:
       - name: Download production bundle
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: tagged-org.bootcinstaller.Installer.flatpak
 
       - name: Download devel bundle
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: tagged-org.bootcinstaller.Installer.Devel.flatpak
 
       - name: Create and publish release
         run: |
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           # Upload assets to the release, creating it if needed.
           # The release may already exist if the tag was pushed manually
           # before CI ran (common during hotfix cycles).
