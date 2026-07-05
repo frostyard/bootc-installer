@@ -139,6 +139,7 @@ jobs:
             meson \
             ninja-build \
             libglib2.0-dev \
+            gettext \
             xvfb
 
       - name: Build GResources
