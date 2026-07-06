@@ -142,7 +142,9 @@ class TestDemoEndToEnd:
             scheduler.drain()
 
             done = _view(window, "done")
-            assert done.page_header.title == "Snow Linux is installed"
+            # The done screen is branded with the selected image's name
+            # (the recipe's "Snow" entry is preselected via the top-level imgref).
+            assert done.page_header.title == "Snow is installed"
             assert (
                 done.page_header.subtitle
                 == "Restart now to complete the installation."

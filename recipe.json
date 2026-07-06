@@ -97,6 +97,9 @@
             "template": "welcome",
             "protected": true
         },
+        "image": {
+            "template": "image"
+        },
         "disk": {
             "template": "disk"
         },

@@ -120,6 +120,38 @@ class TestStepEvent:
         assert "Some future step" in update["label"]
 
 
+# ── Distro-branded install label ──────────────────────────────────────────────
+
+class TestDistroBrandedLabel:
+    def test_install_step_uses_recipe_distro_name(self):
+        """The 'Installing OS' step label is branded with the recipe's
+        distro_name — regression for 'Installing Bluefin' on Snow installs."""
+        state = new_progress_state(distro_name="Snow Linux")
+        update = apply_progress_event(
+            _step(step=5, name="Installing OS", cumulative_pct=1, weight_pct=87),
+            state,
+        )
+        assert update["label"] == "Installing Snow Linux…"
+
+    def test_install_step_generic_without_distro_name(self):
+        """Without a distro_name the label falls back to generic text —
+        never a hardcoded distro brand."""
+        state = new_progress_state()
+        update = apply_progress_event(
+            _step(step=5, name="Installing OS", cumulative_pct=1, weight_pct=87),
+            state,
+        )
+        assert "Bluefin" not in update["label"]
+        assert update["label"] == "Installing your system…"
+
+    def test_substep_label_uses_distro_name(self):
+        state = new_progress_state(distro_name="Snow Linux")
+        apply_progress_event(_step(step=5, name="Installing OS", cumulative_pct=1, weight_pct=87), state)
+        update = apply_progress_event(_substep("Pulling container image"), state)
+        assert update is not None
+        assert "Installing Snow Linux" in update["label"]
+
+
 # ── Substep events ─────────────────────────────────────────────────────────────
 
 class TestSubstepEvent:
@@ -129,7 +161,7 @@ class TestSubstepEvent:
         update = apply_progress_event(_substep("Pulling container image"), state)
         assert update is not None
         # Main label shows the step's friendly text; raw message goes to progress_substep widget
-        assert "Installing Bluefin" in update["label"]
+        assert "Installing your system" in update["label"]
 
     def test_duplicate_substep_no_label(self):
         state = new_progress_state()

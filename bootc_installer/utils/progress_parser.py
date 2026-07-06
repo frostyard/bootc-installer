@@ -18,7 +18,7 @@ _FRIENDLY_STEP_LABELS: dict[str, str] = {
     "Formatting root filesystem":   "Formatting your drive…",
     "Mounting filesystem":          "Almost ready…",
     "Formatting data disk (/var)":  "Preparing data storage…",
-    "Installing OS":                "Installing Bluefin…",
+    "Installing OS":                "Installing your system…",
     "Enrolling TPM2 auto-unlock":   "Setting up auto-unlock…",
     "Copying system Flatpaks":      "Installing your apps…",
     "Configuring installed system": "Configuring your system…",
@@ -29,8 +29,12 @@ _FRIENDLY_STEP_LABELS: dict[str, str] = {
 _RE_LAYER_PROGRESS = re.compile(r"Pulling image: layer (\d+)/(\d+)")
 
 
-def new_progress_state() -> dict:
-    """Return a fresh progress state dict (no GTK types)."""
+def new_progress_state(distro_name: str = "") -> dict:
+    """Return a fresh progress state dict (no GTK types).
+
+    ``distro_name`` brands the "Installing OS" step label (e.g. "Installing
+    Snow Linux…"); when empty the label falls back to generic text.
+    """
     return {
         "pulse_active": True,
         "current_step": 0,
@@ -41,7 +45,15 @@ def new_progress_state() -> dict:
         "seen_substeps": set(),
         "boot_id": "",
         "recovery_key": "",
+        "distro_name": distro_name,
     }
+
+
+def _friendly_label(step_name: str, state: dict) -> str:
+    """Human-friendly label for a fisherman step, branded with the distro."""
+    if step_name == "Installing OS" and state.get("distro_name"):
+        return f"Installing {state['distro_name']}…"
+    return _FRIENDLY_STEP_LABELS.get(step_name, step_name)
 
 
 def apply_progress_event(line: str, state: dict) -> dict | None:
@@ -78,7 +90,7 @@ def apply_progress_event(line: str, state: dict) -> dict | None:
         state["current_step_name"] = name
         state["seen_substeps"].clear()
         state["pulse_active"] = False
-        friendly = _FRIENDLY_STEP_LABELS.get(name, name)
+        friendly = _friendly_label(name, state)
         return {
             "fraction": cumulative_pct / 100.0,
             "label": friendly,
@@ -108,8 +120,7 @@ def apply_progress_event(line: str, state: dict) -> dict | None:
         state["seen_substeps"].add(msg)
         label = None
         if state["current_step"]:
-            friendly = _FRIENDLY_STEP_LABELS.get(state["current_step_name"], state["current_step_name"])
-            label = friendly
+            label = _friendly_label(state["current_step_name"], state)
         return {"fraction": fraction, "label": label, "pulse": False, "complete": False}
 
     if event_type == "recovery_key":

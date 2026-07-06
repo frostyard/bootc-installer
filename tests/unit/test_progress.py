@@ -175,5 +175,29 @@ class TestFriendlySubstep(unittest.TestCase):
         assert result != "Running fstrim on /mnt/target"  # was mapped
 
 
+class TestDemoSteps(unittest.TestCase):
+    """Tests for _demo_steps — the BOOTC_DEMO fake install sequence must be
+    branded with the recipe distro_name, never a hardcoded distro."""
+
+    def setUp(self):
+        import importlib
+        for key in list(sys.modules.keys()):
+            if "bootc_installer.views.progress" in key:
+                sys.modules.pop(key)
+        with patch.dict("sys.modules", _mock_gtk_imports()):
+            mod = importlib.import_module("bootc_installer.views.progress")
+        self.fn = mod._demo_steps
+
+    def test_labels_use_distro_name(self):
+        labels = [label for _, _, label in self.fn("Snow Linux")]
+        assert any("Installing Snow Linux" in label for label in labels)
+        assert not any("Bluefin" in label for label in labels)
+
+    def test_labels_generic_without_distro_name(self):
+        labels = [label for _, _, label in self.fn("")]
+        assert not any("Bluefin" in label for label in labels)
+        assert any("Installing your system" in label for label in labels)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -108,6 +108,33 @@ def _friendly_substep(msg: str) -> str:
     return msg
 
 
+def _demo_steps(distro_name: str) -> list:
+    """Fake install sequence for demo mode: (delay_seconds, bar_fraction, label).
+
+    Mirrors real-install proportions: disk prep is fast (<10%),
+    OS install dominates (~87% of bar, most of the time),
+    then a quick burst to 100% for apps + config.
+    The install label is branded with the recipe distro_name.
+    """
+    if distro_name:
+        installing = f"Installing {distro_name}\u2026"
+    else:
+        installing = "Installing your system\u2026"
+    return [
+        (0.3,  0.01, "Checking your drive\u2026"),
+        (0.6,  0.02, "Setting up your drive\u2026"),
+        (0.9,  0.04, "Preparing the boot system\u2026"),
+        (1.2,  0.05, "Formatting your drive\u2026"),
+        (1.5,  0.06, "Mounting your drive\u2026"),
+        (2.0,  0.10, installing),
+        (3.5,  0.45, installing),
+        (5.2,  0.86, installing),
+        (5.8,  0.93, "Installing your apps\u2026"),
+        (6.3,  0.97, "Configuring your system\u2026"),
+        (6.8,  0.99, "Finishing up\u2026"),
+    ]
+
+
 @Gtk.Template(resource_path="/org/bootcinstaller/Installer/gtk/progress.ui")
 class BootcProgress(Gtk.Box):
     __gtype_name__ = "BootcProgress"
@@ -138,7 +165,7 @@ class BootcProgress(Gtk.Box):
         self.__pulse_active = True  # whether the progress bar is in pulse mode
         self.__log_file = None      # open handle to fisherman-output.log for tailing
         self.__log_linebuf = ""     # incomplete line buffer for the log watcher
-        self.__progress_state = new_progress_state()
+        self.__progress_state = new_progress_state(distro_name=self.__distro_name())
         self.__boot_id = ""  # EFI boot entry ID from fisherman complete event
         self.__recovery_key = ""
         self.__recipe_path = None   # path to recipe JSON (for cleanup)
@@ -158,6 +185,11 @@ class BootcProgress(Gtk.Box):
         self.console_button.connect("clicked", self.__on_console_button)
         self.media_button.connect("clicked", self.__on_media_button)
         self.copy_log_button.connect("clicked", self.__on_copy_log)
+
+    def __distro_name(self) -> str:
+        """Recipe distro_name for branding install labels (may be empty)."""
+        recipe = getattr(self.__window, "recipe", None) or {}
+        return recipe.get("distro_name", "")
 
 
     def __configure_install_video(self):
@@ -601,23 +633,7 @@ class BootcProgress(Gtk.Box):
         No fisherman is launched. No disk is touched.
         """
         logger.info("start_demo() called")
-        # Demo steps: (delay_seconds, bar_fraction, label)
-        # Mirrors real-install proportions: disk prep is fast (<10%),
-        # OS install dominates (~87% of bar, most of the time),
-        # then a quick burst to 100% for apps + config.
-        _STEPS = [
-            (0.3,  0.01, "Checking your drive\u2026"),
-            (0.6,  0.02, "Setting up your drive\u2026"),
-            (0.9,  0.04, "Preparing the boot system\u2026"),
-            (1.2,  0.05, "Formatting your drive\u2026"),
-            (1.5,  0.06, "Mounting your drive\u2026"),
-            (2.0,  0.10, "Installing Bluefin\u2026"),
-            (3.5,  0.45, "Installing Bluefin\u2026"),
-            (5.2,  0.86, "Installing Bluefin\u2026"),
-            (5.8,  0.93, "Installing your apps\u2026"),
-            (6.3,  0.97, "Configuring your system\u2026"),
-            (6.8,  0.99, "Finishing up\u2026"),
-        ]
+        _STEPS = _demo_steps(self.__distro_name())
         self.__pulse_active = False
         self.__set_progress_fraction(0.0)
         self.progress_substep.set_label("")
@@ -673,7 +689,7 @@ class BootcProgress(Gtk.Box):
             logger.info("No stale log file to delete")
         except Exception as e:
             logger.error("Failed to delete stale log: %s", e)
-        self.__progress_state = new_progress_state()
+        self.__progress_state = new_progress_state(distro_name=self.__distro_name())
         self.__boot_id = ""
         self.__recovery_key = ""
         self.__pulse_active = True
