@@ -305,6 +305,7 @@ class BootcDefaultImage(Adw.Bin):
         self.__selected_filesystems = []            # user-selectable filesystems from images.json
         self.__all_expanders = []   # every ExpanderRow widget
         self.__leaf_rows = []       # [(row, check, imgref, flatpaks, icon, carousel, needs_user, composefs, image_type, bootloader, image_filesystem, flatpak_var_path, default_hostname, filesystems, search_str, [ancestor_exps])]
+        self.__pretty_overrides = {}  # imgref → display name (recipe-defined images)
 
         # Hidden anchor for the radio CheckButton group.
         self.__radio_anchor = Gtk.CheckButton()
@@ -319,11 +320,22 @@ class BootcDefaultImage(Adw.Bin):
 
         self.__select_default()
         self.__update_btn_next()
+        # Downstream steps were initially built against the default selection,
+        # so a rebuild is only needed when the user picks something else.
+        self.__applied_selection = self.__current_selection()
+
+    def __current_selection(self):
+        return (self.__selected_imgref, self.row_custom.get_expanded())
 
     def __on_next_clicked(self, *args):
         # Rebuild downstream steps so they can react to the selected image
         # (e.g. show/hide user-creation step based on needs_user_creation).
-        self.__window.rebuild_ui_after_image()
+        # Skip when the selection is unchanged — rebuilding resets the
+        # carousel and would churn the wizard for no reason.
+        selection = self.__current_selection()
+        if selection != self.__applied_selection:
+            self.__applied_selection = selection
+            self.__window.rebuild_ui_after_image()
         self.__window.next()
 
     # ── Recursive tree construction ───────────────────────────────────────────
@@ -341,8 +353,11 @@ class BootcDefaultImage(Adw.Bin):
                 imgref = img.get("imgref", "")
                 if not imgref:
                     continue
+                name = img.get("name", imgref)
+                if img.get("name"):
+                    self.__pretty_overrides[imgref] = img["name"]
                 self.__add_leaf(
-                    exp, img.get("name", imgref), imgref,
+                    exp, name, imgref,
                     img.get("description", ""), "", [exp])
             self.list_images.append(exp)
 
@@ -435,9 +450,18 @@ class BootcDefaultImage(Adw.Bin):
         parent.add_row(row)
         self.__leaf_rows.append((row, check, imgref, flatpaks, icon, carousel, needs_user, composefs, image_type, bootloader, image_filesystem, flatpak_var_path, default_hostname, filesystems or [], search_str, list(ancestors)))
 
+    def __default_imgref(self) -> str:
+        """Effective default image: manifest default_image, else the recipe's
+        top-level imgref (the distro's flagship image, e.g. Snow)."""
+        if _DEFAULT_IMAGE:
+            return _DEFAULT_IMAGE
+        recipe = getattr(self.__window, "recipe", None) or {}
+        return recipe.get("imgref", "")
+
     def __select_default(self):
+        default = self.__default_imgref()
         for _row, check, imgref, _flatpaks, _icon, _carousel, _needs_user, _composefs, _image_type, _bootloader, _image_filesystem, _flatpak_var_path, _hostname, _filesystems, _search, ancestors in self.__leaf_rows:
-            if imgref == _DEFAULT_IMAGE:
+            if imgref == default:
                 check.set_active(True)
                 for exp in ancestors:
                     exp.set_expanded(True)
@@ -457,7 +481,9 @@ class BootcDefaultImage(Adw.Bin):
             self.__selected_bootloader = bootloader
             self.__selected_image_filesystem = image_filesystem
             self.__selected_flatpak_var_path = flatpak_var_path or ""
-            self.__selected_pretty_name = _imgref_to_pretty_name(imgref)
+            self.__selected_pretty_name = (
+                self.__pretty_overrides.get(imgref) or _imgref_to_pretty_name(imgref)
+            )
             self.__selected_default_hostname = default_hostname or ""
             self.__selected_filesystems = filesystems or []
             # flatpaks may be a list of app IDs or a URL string pointing to a remote list.
@@ -527,8 +553,9 @@ class BootcDefaultImage(Adw.Bin):
                 exp.set_visible(False)
 
     def __expand_default_path(self):
+        default = self.__default_imgref()
         for _, _, imgref, _, _, _, _, _, _, _, _, _, _, _, _, ancestors in self.__leaf_rows:
-            if imgref == _DEFAULT_IMAGE:
+            if imgref == default:
                 for exp in ancestors:
                     exp.set_expanded(True)
                 return
@@ -547,12 +574,21 @@ class BootcDefaultImage(Adw.Bin):
     # ── Test / finals ─────────────────────────────────────────────────────────
 
     def should_show(self, context: dict) -> bool:
-        return context.get("leaf_count", 2) > 1
+        # Recipe-defined extra images count toward the selectable total, so a
+        # single-image manifest plus recipe images still shows the selector.
+        recipe_images = [
+            img for img in context.get("sys_recipe", {}).get("images", [])
+            if img.get("imgref")
+        ]
+        return context.get("leaf_count", 2) + len(recipe_images) > 1
 
     @property
     def skip_screen(self) -> bool:
-        """True when the manifest contains only one selectable image."""
-        return not self.should_show({"leaf_count": self.leaf_count})
+        """True when only one selectable image exists (manifest + recipe)."""
+        return not self.should_show({
+            "leaf_count": self.leaf_count,
+            "sys_recipe": getattr(self.__window, "recipe", None) or {},
+        })
 
     @property
     def leaf_count(self) -> int:

@@ -577,6 +577,8 @@ class TestBootcDefaultImagePureLogic(unittest.TestCase):
 
     def _make_widget(self):
         widget = object.__new__(self.cls)
+        widget._BootcDefaultImage__window = types.SimpleNamespace(recipe={})
+        widget._BootcDefaultImage__pretty_overrides = {}
         widget.row_custom = MagicMock()
         widget.image_url_entry = MagicMock()
         widget.btn_next = MagicMock()
@@ -596,6 +598,38 @@ class TestBootcDefaultImagePureLogic(unittest.TestCase):
         widget._BootcDefaultImage__selected_default_hostname = "example-host"
         widget._BootcDefaultImage__selected_filesystems = ["xfs", "btrfs"]
         return widget
+
+    def test_on_check_toggled_prefers_display_name_override(self):
+        """Recipe-defined images carry a display name — selecting one must not
+        fall back to the mangled imgref slug (e.g. 'Snowfieldloaded')."""
+        widget = self._make_widget()
+        widget._BootcDefaultImage__pretty_overrides = {
+            "ghcr.io/frostyard/snowfieldloaded:latest": "Snowfield Loaded",
+        }
+        check = MagicMock()
+        check.get_active.return_value = True
+        widget.row_custom.get_expanded.return_value = False
+
+        self.cls._BootcDefaultImage__on_check_toggled(
+            widget,
+            check,
+            "ghcr.io/frostyard/snowfieldloaded:latest",
+            ["org.default.App"],
+            None,   # icon
+            None,   # carousel
+            False,  # needs_user
+            False,  # composefs
+            "bootc",
+            "",     # bootloader
+            "",     # image_filesystem
+            "",     # flatpak_var_path
+            "",     # default_hostname
+            [],     # filesystems
+        )
+
+        self.assertEqual(
+            widget._BootcDefaultImage__selected_pretty_name, "Snowfield Loaded"
+        )
 
     def test_on_check_toggled_updates_selected_state_for_remote_flatpaks(self):
         widget = self._make_widget()

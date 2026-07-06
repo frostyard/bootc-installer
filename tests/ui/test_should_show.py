@@ -12,6 +12,22 @@ class TestImageStepShouldShow:
     def test_visible_when_multiple_leaves(self):
         assert BootcDefaultImage.should_show(object(), {"leaf_count": 2})
 
+    def test_visible_when_recipe_adds_images_to_single_leaf_manifest(self):
+        """Recipe-defined images count toward the selectable total — a
+        single-image manifest plus recipe images must show the selector."""
+        context = {
+            "leaf_count": 1,
+            "sys_recipe": {"images": [{"name": "Snow", "imgref": "ghcr.io/frostyard/snow:latest"}]},
+        }
+        assert BootcDefaultImage.should_show(object(), context)
+
+    def test_recipe_images_without_imgref_are_ignored(self):
+        context = {
+            "leaf_count": 1,
+            "sys_recipe": {"images": [{"name": "broken, no imgref"}]},
+        }
+        assert not BootcDefaultImage.should_show(object(), context)
+
 
 class TestDiskStepShouldShow:
     def test_hidden_when_single_disk(self):
