@@ -756,6 +756,48 @@ class TestBootcDefaultImagePureLogic(unittest.TestCase):
         self.assertIsNone(finals["icon"])
 
 
+class TestAddLeafParentDispatch(unittest.TestCase):
+    """Regression: a top-level leaf image is added with the Gtk.ListBox as its
+    parent, which exposes append() but NOT add_row().  __add_leaf must branch on
+    parent type exactly like __build_node does, otherwise building the picker
+    crashes with 'ListBox has no attribute add_row' and the whole image step
+    fails to render (previously masked by live-ISO mode deleting the step)."""
+
+    def setUp(self):
+        self.mod = _import_image_fresh()
+        self.cls = self.mod.BootcDefaultImage
+
+    def _make_widget(self):
+        widget = object.__new__(self.cls)
+        widget.list_images = MagicMock()
+        widget._BootcDefaultImage__radio_anchor = MagicMock()
+        widget._BootcDefaultImage__leaf_rows = []
+        return widget
+
+    def _add_leaf(self, widget, parent):
+        with (
+            patch.object(self.mod.Adw, "ActionRow", return_value=MagicMock(), create=True),
+            patch.object(self.mod.Gtk, "CheckButton", return_value=MagicMock(), create=True),
+        ):
+            self.cls._BootcDefaultImage__add_leaf(
+                widget, parent, "Cayo", "ghcr.io/frostyard/cayo:latest",
+                "", "", [],
+            )
+
+    def test_toplevel_leaf_uses_append_not_add_row(self):
+        widget = self._make_widget()
+        self._add_leaf(widget, widget.list_images)
+        widget.list_images.append.assert_called_once()
+        widget.list_images.add_row.assert_not_called()
+
+    def test_nested_leaf_uses_add_row_not_append(self):
+        widget = self._make_widget()
+        parent = MagicMock()  # an Adw.ExpanderRow-like group, not the ListBox
+        self._add_leaf(widget, parent)
+        parent.add_row.assert_called_once()
+        parent.append.assert_not_called()
+
+
 class TestImagesCatalogIntegrity(unittest.TestCase):
     """Regression tests for fisherman/data/images.json content."""
 

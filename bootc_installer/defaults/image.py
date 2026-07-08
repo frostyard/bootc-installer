@@ -447,7 +447,13 @@ class BootcDefaultImage(Adw.Bin):
             if img:
                 row.add_suffix(img)
 
-        parent.add_row(row)
+        # A leaf can sit at the top level (parent is the Gtk.ListBox) or nested
+        # inside an Adw.ExpanderRow group.  ListBox uses append(); ExpanderRow
+        # uses add_row().  Mirror the same branch __build_node uses for groups.
+        if parent is self.list_images:
+            parent.append(row)
+        else:
+            parent.add_row(row)
         self.__leaf_rows.append((row, check, imgref, flatpaks, icon, carousel, needs_user, composefs, image_type, bootloader, image_filesystem, flatpak_var_path, default_hostname, filesystems or [], search_str, list(ancestors)))
 
     def __default_imgref(self) -> str:
