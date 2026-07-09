@@ -234,7 +234,9 @@ class BootcDefaultSlurp(Adw.Bin):
 
     def __render_scan_result(self):
         self.slurp_spinner.set_spinning(False)
-        partitions = [part for part in (self.__scan_result or {}).get("partitions", []) if part.get("users")]
+        # fisherman scan emits "partitions": null when the disk has none —
+        # .get() with a default doesn't cover an explicit null.
+        partitions = [part for part in (self.__scan_result or {}).get("partitions") or [] if part.get("users")]
 
         if not partitions:
             self.__show_message(
