@@ -495,5 +495,51 @@ class TestBootcDefaultDiskRefreshFromImageStep(unittest.TestCase):
         getattr(obj, "_BootcDefaultDisk__setup_filesystem_row").assert_called_once_with(["xfs"])
 
 
+class TestCheckVarDiskExisting(unittest.TestCase):
+    """Regression tests for the /var-disk existing-filesystem probe.
+
+    A partitioned disk (e.g. a previous full install) must NOT count as
+    having a keepable filesystem: fisherman mounts the raw device, which
+    only works for a whole-disk filesystem.
+    """
+
+    def setUp(self):
+        self.mod = _import_disk_fresh()
+
+    def _make_obj(self):
+        obj = self.mod.BootcDefaultDisk.__new__(self.mod.BootcDefaultDisk)
+        obj.group_var_disk_existing = MagicMock()
+        obj.var_disk_keep_switch = MagicMock()
+        return obj
+
+    def _run_check(self, obj, lsblk_output):
+        disk = types.SimpleNamespace(disk="/dev/vdb")
+        with unittest.mock.patch(
+            "subprocess.check_output", return_value=lsblk_output
+        ) as check_output:
+            obj._BootcDefaultDisk__check_var_disk_existing(disk)
+        return check_output
+
+    def test_whole_disk_filesystem_shows_keep_toggle(self):
+        obj = self._make_obj()
+        self._run_check(obj, "xfs\n")
+        obj.group_var_disk_existing.set_visible.assert_called_once_with(True)
+        obj.var_disk_keep_switch.set_active.assert_called_once_with(True)
+
+    def test_partitioned_disk_hides_keep_toggle(self):
+        obj = self._make_obj()
+        # --nodeps limits lsblk to the whole-disk row, whose FSTYPE is empty
+        # on a partitioned disk.
+        self._run_check(obj, "\n")
+        obj.group_var_disk_existing.set_visible.assert_called_once_with(False)
+        obj.var_disk_keep_switch.set_active.assert_not_called()
+
+    def test_probe_uses_nodeps(self):
+        obj = self._make_obj()
+        check_output = self._run_check(obj, "\n")
+        args = check_output.call_args[0][0]
+        self.assertIn("--nodeps", args)
+
+
 if __name__ == "__main__":
     unittest.main()

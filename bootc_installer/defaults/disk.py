@@ -1188,11 +1188,15 @@ class BootcDefaultDisk(Adw.Bin):
         """Detect existing filesystem on disk and show the keep/format toggle."""
         import subprocess
         try:
+            # --nodeps: query the whole-disk device only. Without it lsblk
+            # also prints each partition's FSTYPE, so a partitioned disk
+            # (e.g. a previous full install) looks like it has a keepable
+            # filesystem — but fisherman mounts the raw device, which only
+            # works for a whole-disk filesystem.
             out = subprocess.check_output(
-                ["flatpak-spawn", "--host", "lsblk", "-no", "FSTYPE", disk.disk],
+                ["flatpak-spawn", "--host", "lsblk", "--nodeps", "-no", "FSTYPE", disk.disk],
                 text=True, stderr=subprocess.DEVNULL,
             ).strip()
-            # If lsblk returns a non-empty fstype the disk has a filesystem
             has_existing = bool(out)
         except Exception:
             has_existing = False
