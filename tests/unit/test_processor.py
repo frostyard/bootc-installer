@@ -695,6 +695,19 @@ class TestImageFallbackPaths:
         assert r["image"] == "containers-storage:ghcr.io/org/image:latest"
         assert r["targetImgref"] == "ghcr.io/org/image:latest"
 
+    def test_local_imgref_ignored_when_other_image_selected(self):
+        """Picking a non-baked image in the live picker must pull from the
+        registry, not be silently replaced by the baked offline source."""
+        finals = _auto_finals(image="ghcr.io/org/other:latest")
+        sys_recipe = {
+            "imgref": "ghcr.io/org/image:latest",
+            "local_imgref": "containers-storage:ghcr.io/org/image:latest",
+        }
+        path = Processor.gen_install_recipe("log", finals, sys_recipe)
+        r = _load(path)
+        assert r["image"] == "ghcr.io/org/other:latest"
+        assert r["targetImgref"] == "ghcr.io/org/other:latest"
+
     def test_additional_image_stores_propagated(self):
         """additionalImageStores from sys_recipe passes through to the recipe."""
         finals = _auto_finals()

@@ -107,9 +107,15 @@ class RecipeLoader:
                     f"({self.__recipe['local_imgref']}), imgref stays as remote tracking ref"
                 )
 
-            # Remove the image selection step — use the configured image silently
-            self.__recipe["steps"].pop("image", None)
-            logger.info("Live ISO mode: image selection step removed")
+            # Remove the image selection step — use the configured image silently.
+            # Multi-image ISOs (e.g. Snow) opt out with "live_image_selection": true
+            # in the recipe; the picker's own skip_screen still hides the step when
+            # only one image is selectable.
+            if self.__recipe.get("live_image_selection"):
+                logger.info("Live ISO mode: live_image_selection set — keeping image step")
+            else:
+                self.__recipe["steps"].pop("image", None)
+                logger.info("Live ISO mode: image selection step removed")
         else:
             logger.info("Flatpak/normal mode: image selection enabled")
 

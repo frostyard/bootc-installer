@@ -140,6 +140,9 @@ class Processor:
         # In live ISO mode: the image step is skipped; recipe["imgref"] holds the remote
         # tracking ref and optional "local_imgref" holds the install source override.
         image = merged.get("custom_image", "") or merged.get("selected_image", "")
+        # Explicit UI selection ("" when the image step was skipped) — needed
+        # below to decide whether the baked offline source may substitute it.
+        user_selected_ref = image
         if not image:
             image = sys_recipe.get("imgref", "")
         if not image:
@@ -185,6 +188,16 @@ class Processor:
         # pre-populated squashfs.  It is passed to fisherman as --source-imgref while
         # target_imgref (the remote ref) is passed as --target-imgref unchanged.
         local_imgref = sys_recipe.get("local_imgref", "")
+        if local_imgref and user_selected_ref and user_selected_ref != sys_recipe.get("imgref", ""):
+            # The user explicitly picked an image other than the one baked on
+            # the ISO — the offline source doesn't contain it, so install from
+            # the registry instead of silently substituting the baked image.
+            logger.info(
+                f"Selected image {user_selected_ref} differs from baked "
+                f"{sys_recipe.get('imgref', '')} — ignoring local_imgref, "
+                f"pulling from registry"
+            )
+            local_imgref = ""
         if local_imgref:
             logger.info(
                 f"local_imgref override: install source={local_imgref}, "
