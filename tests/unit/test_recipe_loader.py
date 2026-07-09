@@ -161,6 +161,21 @@ class TestRecipeLoaderEnrich(unittest.TestCase):
         self.assertNotIn("image", self.loader._RecipeLoader__recipe["steps"])
 
     @patch("os.path.exists")
+    def test_live_iso_keeps_image_step_with_opt_in(self, mock_exists):
+        """live_image_selection: true retains the image step in live ISO mode."""
+        mock_exists.return_value = True  # simulate live ISO
+        self.set_recipe({
+            "log_file": "/tmp/test.log",
+            "distro_name": "Test OS",
+            "distro_logo": "logo.png",
+            "steps": {"image": {"type": "select"}, "partition": {"type": "auto"}},
+            "imgref": "ghcr.io/test/image:latest",
+            "live_image_selection": True
+        })
+        self.loader._RecipeLoader__enrich()
+        self.assertIn("image", self.loader._RecipeLoader__recipe["steps"])
+
+    @patch("os.path.exists")
     @patch("subprocess.run")
     def test_live_iso_detects_bootc_image(self, mock_run, mock_exists):
         """In live ISO mode without imgref, should detect via bootc status."""
