@@ -7,6 +7,7 @@ import unittest
 from unittest.mock import patch
 
 from bootc_installer.utils.processor import Processor
+from bootc_installer.utils import secure_install
 from bootc_installer.utils.secure_install import (
     acknowledgement_route,
     create_mok_password_file,
@@ -215,6 +216,27 @@ class TestSecureInstall(unittest.TestCase):
             remove_recovery_key_file(path)
 
             self.assertTrue(os.path.exists(path))
+
+    def test_managed_replacement_cleanup_closes_the_retained_descriptor(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as directory:
+            path, _password = create_mok_password_file(directory=directory)
+            credential_fd = secure_install._managed_credential_paths[path]
+            original_identity = (os.fstat(credential_fd).st_dev, os.fstat(credential_fd).st_ino)
+
+            os.unlink(path)
+            with open(path, "w", encoding="ascii") as replacement:
+                replacement.write("operator-owned")
+            os.chmod(path, 0o600)
+
+            self.assertEqual((os.fstat(credential_fd).st_dev, os.fstat(credential_fd).st_ino), original_identity)
+            remove_recovery_key_file(path)
+
+            self.assertTrue(os.path.exists(path))
+            self.assertNotIn(path, secure_install._managed_credential_paths)
+            with self.assertRaises(OSError):
+                os.fstat(credential_fd)
 
     def test_credential_directory_is_exactly_owner_only_when_preexisting(self):
         import pathlib

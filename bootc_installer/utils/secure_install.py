@@ -14,7 +14,7 @@ _RECOVERY_PREFIX = "bootc-secure-recovery-"
 _MOK_PASSWORD_PREFIX = "bootc-secure-mok-password-"
 _STALE_RECOVERY_MAX_AGE_SECONDS = 24 * 60 * 60
 _MANAGED_CREDENTIAL_PREFIXES = (_RECOVERY_PREFIX, _MOK_PASSWORD_PREFIX)
-_managed_credential_paths: dict[str, tuple[int, int]] = {}
+_managed_credential_paths: dict[str, int] = {}
 
 
 def _recovery_directory() -> pathlib.Path:
@@ -55,19 +55,42 @@ def create_recovery_key_file(credential: str, directory: pathlib.Path | None = N
     fd, path = tempfile.mkstemp(prefix=_RECOVERY_PREFIX, dir=directory)
     try:
         os.fchmod(fd, 0o600)
-        with os.fdopen(fd, "wb") as credential_file:
+        with os.fdopen(os.dup(fd), "wb") as credential_file:
             credential_file.write(credential.encode())
+        os.fstat(fd)
     except BaseException:
         os.close(fd)
-        os.unlink(path)
+        try:
+            os.unlink(path)
+        except FileNotFoundError:
+            pass
         raise
-    file_stat = os.stat(path)
-    _managed_credential_paths[path] = (file_stat.st_dev, file_stat.st_ino)
+    _managed_credential_paths[path] = fd
     return path
 
 
 def _is_managed_recovery_key_file(path: str) -> bool:
     return path in _managed_credential_paths
+
+
+def _is_private_regular_file(file_stat: os.stat_result, size: int | None = None) -> bool:
+    return (
+        stat.S_ISREG(file_stat.st_mode)
+        and stat.S_IMODE(file_stat.st_mode) == 0o600
+        and file_stat.st_nlink == 1
+        and (size is None or file_stat.st_size == size)
+    )
+
+
+def _managed_path_matches_descriptor(path: str, fd: int, size: int | None = None) -> bool:
+    """Verify the path still names the private file retained by this process."""
+    path_stat = os.stat(path, follow_symlinks=False)
+    descriptor_stat = os.fstat(fd)
+    return (
+        _is_private_regular_file(path_stat, size)
+        and _is_private_regular_file(descriptor_stat, size)
+        and (path_stat.st_dev, path_stat.st_ino) == (descriptor_stat.st_dev, descriptor_stat.st_ino)
+    )
 
 
 def create_mok_password_file(directory: pathlib.Path | None = None) -> tuple[str, str]:
@@ -77,33 +100,31 @@ def create_mok_password_file(directory: pathlib.Path | None = None) -> tuple[str
     fd, path = tempfile.mkstemp(prefix=_MOK_PASSWORD_PREFIX, dir=directory)
     try:
         os.fchmod(fd, 0o600)
-        with os.fdopen(fd, "w", encoding="ascii") as password_file:
+        with os.fdopen(os.dup(fd), "w", encoding="ascii") as password_file:
             password_file.write(password)
+        os.fstat(fd)
     except BaseException:
         os.close(fd)
-        os.unlink(path)
+        try:
+            os.unlink(path)
+        except FileNotFoundError:
+            pass
         raise
-    file_stat = os.stat(path)
-    _managed_credential_paths[path] = (file_stat.st_dev, file_stat.st_ino)
+    _managed_credential_paths[path] = fd
     return path, password
 
 
 def remove_recovery_key_file(path: str) -> None:
     """Delete a credential created by this process without touching caller-owned files."""
-    if _is_managed_recovery_key_file(path):
+    credential_fd = _managed_credential_paths.pop(path, None)
+    if credential_fd is not None:
         try:
-            file_stat = os.stat(path, follow_symlinks=False)
-            if (
-                stat.S_ISREG(file_stat.st_mode)
-                and stat.S_IMODE(file_stat.st_mode) == 0o600
-                and file_stat.st_nlink == 1
-                and (file_stat.st_dev, file_stat.st_ino) == _managed_credential_paths[path]
-            ):
+            if _managed_path_matches_descriptor(path, credential_fd):
                 os.unlink(path)
         except FileNotFoundError:
             pass
         finally:
-            _managed_credential_paths.pop(path, None)
+            os.close(credential_fd)
 
 
 def cleanup_credentials_from_recipe(recipe_path: str) -> None:
@@ -126,30 +147,10 @@ def get_managed_mok_password_from_recipe(recipe_path: str) -> str:
             password_path = json.load(recipe_file).get("secureInstall", {}).get("mokPasswordFile", "")
         if not isinstance(password_path, str) or not _is_managed_recovery_key_file(password_path):
             return ""
-        expected_identity = _managed_credential_paths[password_path]
-        password_stat = os.stat(password_path, follow_symlinks=False)
-        if (
-            not stat.S_ISREG(password_stat.st_mode)
-            or stat.S_IMODE(password_stat.st_mode) != 0o600
-            or password_stat.st_nlink != 1
-            or password_stat.st_size != 16
-            or (password_stat.st_dev, password_stat.st_ino) != expected_identity
-        ):
+        password_fd = _managed_credential_paths[password_path]
+        if not _managed_path_matches_descriptor(password_path, password_fd, size=16):
             return ""
-        password_fd = os.open(password_path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
-        try:
-            password_stat = os.fstat(password_fd)
-            if (
-                not stat.S_ISREG(password_stat.st_mode)
-                or stat.S_IMODE(password_stat.st_mode) != 0o600
-                or password_stat.st_nlink != 1
-                or password_stat.st_size != 16
-                or (password_stat.st_dev, password_stat.st_ino) != expected_identity
-            ):
-                return ""
-            password = os.read(password_fd, 17).decode("ascii")
-        finally:
-            os.close(password_fd)
+        password = os.pread(password_fd, 17, 0).decode("ascii")
     except (OSError, ValueError, AttributeError, UnicodeError):
         return ""
     if len(password) == 16 and password.isascii() and password.isalnum():

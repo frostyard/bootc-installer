@@ -21,8 +21,9 @@ object:
 ```
 
 The installer creates both parent-managed files beside each other with mode
-`0600` and one link. The recovery file contains the selected recovery
-passphrase as UTF-8 bytes without stripping a trailing newline. The MOK file
+`0600` and one link, retaining an open descriptor for each until cleanup. The
+recovery file contains the selected recovery passphrase as UTF-8 bytes without
+stripping a trailing newline. The MOK file
 contains a cryptographically random, one-time, 16-character ASCII-alphanumeric
 MokManager password. The recipe contains only their paths, never either secret.
 Both parent-created files are removed after Fisherman exits, on cancellation,
