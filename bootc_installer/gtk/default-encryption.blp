@@ -72,6 +72,13 @@ template $BootcDefaultEncryption: Adw.Bin {
             margin-bottom: 4;
           }
 
+          Label secure_requirement_label {
+            label: _("Secure installation requires UEFI Secure Boot and a TPM 2.0 device. Enable both before continuing.");
+            visible: false;
+            wrap: true;
+            styles ["error"]
+          }
+
           Adw.ActionRow {
             title: _("Use hardware-backed encryption");
             subtitle: _("The disk unlocks automatically on this hardware. Your passphrase remains as a fallback.");

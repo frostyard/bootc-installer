@@ -134,6 +134,7 @@ from bootc_installer.defaults.image import (  # noqa: E402
     _count_leaves,
     _fetch_remote_flatpak_list,
     _find_icon_for_imgref,
+    _find_secure_install_for,
     _imgref_to_pretty_name,
     _load_manifest,
     _make_icon,
@@ -163,6 +164,35 @@ class TestFindIconForImgref(unittest.TestCase):
     def test_empty_imgref_returns_none(self):
         icon = _find_icon_for_imgref("")
         self.assertIsNone(icon)
+
+
+class TestFindSecureInstallForImgref(unittest.TestCase):
+    def test_secure_install_is_explicit_image_metadata_not_an_imgref_heuristic(self):
+        manifest = {
+            "images": [
+                {
+                    "secure_install": True,
+                    "children": [
+                        {"imgref": "ghcr.io/example/explicit:latest"},
+                    ],
+                },
+                {"imgref": "ghcr.io/example/secure-sounding-name:latest"},
+            ]
+        }
+
+        self.assertTrue(_find_secure_install_for("ghcr.io/example/explicit:latest", manifest))
+        self.assertFalse(_find_secure_install_for("ghcr.io/example/secure-sounding-name:latest", manifest))
+
+    def test_secure_install_inherits_through_registry_and_tag_nodes(self):
+        manifest = {
+            "images": [{
+                "registry": "ghcr.io/example/product",
+                "secure_install": True,
+                "children": [{"tag": "latest"}],
+            }]
+        }
+
+        self.assertTrue(_find_secure_install_for("ghcr.io/example/product:latest", manifest))
 
     def test_node_with_no_icon_returns_none(self):
         icon = _find_icon_for_imgref("ghcr.io/example/noicon:latest")
@@ -906,4 +936,3 @@ class TestImagesCatalogIntegrity(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

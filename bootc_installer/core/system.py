@@ -105,6 +105,7 @@ class Systeminfo:
     cpu = None
     _nvidia = None
     _tpm2 = None
+    _secure_boot = None
     _gpus = None
 
     @staticmethod
@@ -204,6 +205,23 @@ class Systeminfo:
             return Systeminfo._tpm2
         Systeminfo._tpm2 = os.path.exists("/sys/class/tpm/tpm0")
         return Systeminfo._tpm2
+
+    @staticmethod
+    def has_secure_boot() -> bool:
+        """Return whether UEFI Secure Boot is enabled, failing closed on errors."""
+        if Systeminfo._secure_boot is not None:
+            return Systeminfo._secure_boot
+        try:
+            entries = glob.glob("/sys/firmware/efi/efivars/SecureBoot-*")
+            if not entries:
+                Systeminfo._secure_boot = False
+                return False
+            with open(entries[0], "rb") as secure_boot_file:
+                value = secure_boot_file.read()
+                Systeminfo._secure_boot = len(value) >= 5 and value[4:5] == b"\x01"
+        except OSError:
+            Systeminfo._secure_boot = False
+        return Systeminfo._secure_boot
 
     @staticmethod
     def generate_hostname() -> str:

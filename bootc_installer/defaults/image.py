@@ -170,6 +170,26 @@ def _find_icon_for_imgref(imgref: str) -> "str | None":
     return _search(_MANIFEST.get("images", []))
 
 
+def _find_secure_install_for(imgref: str, manifest: dict | None = None) -> bool:
+    """Read explicit secure-install metadata without deriving it from an image name."""
+    def _search(nodes, secure_ctx=False, registry_ctx=""):
+        for node in nodes:
+            secure = bool(node.get("secure_install", secure_ctx))
+            registry = node.get("registry", registry_ctx)
+            node_imgref = node.get("imgref")
+            if node_imgref is None and node.get("tag") and registry:
+                node_imgref = f"{registry}:{node['tag']}"
+            if node_imgref == imgref:
+                return secure
+            result = _search(node.get("children", []), secure, registry)
+            if result is not None:
+                return result
+        return None
+
+    result = _search((manifest or _MANIFEST).get("images", []))
+    return bool(result)
+
+
 # ── Pretty name helpers ───────────────────────────────────────────────────────
 
 def _imgref_to_pretty_name(imgref: str) -> str:
@@ -303,6 +323,7 @@ class BootcDefaultImage(Adw.Bin):
         self.__selected_pretty_name = _imgref_to_pretty_name(_DEFAULT_IMAGE)
         self.__selected_default_hostname = ""       # suggested hostname from images.json
         self.__selected_filesystems = []            # user-selectable filesystems from images.json
+        self.__selected_secure_install = False
         self.__all_expanders = []   # every ExpanderRow widget
         self.__leaf_rows = []       # [(row, check, imgref, flatpaks, icon, carousel, needs_user, composefs, image_type, bootloader, image_filesystem, flatpak_var_path, default_hostname, filesystems, search_str, [ancestor_exps])]
         self.__pretty_overrides = {}  # imgref → display name (recipe-defined images)
@@ -492,6 +513,7 @@ class BootcDefaultImage(Adw.Bin):
             )
             self.__selected_default_hostname = default_hostname or ""
             self.__selected_filesystems = filesystems or []
+            self.__selected_secure_install = _find_secure_install_for(imgref)
             # flatpaks may be a list of app IDs or a URL string pointing to a remote list.
             if isinstance(flatpaks, str) and flatpaks.startswith("http"):
                 self.__selected_flatpaks = _fetch_remote_flatpak_list(flatpaks)
@@ -516,6 +538,7 @@ class BootcDefaultImage(Adw.Bin):
             self.__selected_pretty_name = None
             self.__selected_default_hostname = ""
             self.__selected_filesystems = []
+            self.__selected_secure_install = False
         self.__update_btn_next()
 
     def __on_url_changed(self, entry):
@@ -623,6 +646,7 @@ class BootcDefaultImage(Adw.Bin):
                 "bootloader": "",
                 "image_filesystem": "",
                 "icon": None,
+                "secure_install": False,
             }
         return {
             "selected_image": self.__selected_imgref,
@@ -638,5 +662,5 @@ class BootcDefaultImage(Adw.Bin):
             "icon": self.__selected_icon,
             "default_hostname": self.__selected_default_hostname,
             "supported_filesystems": self.__selected_filesystems,
+            "secure_install": getattr(self, "_BootcDefaultImage__selected_secure_install", False),
         }
-

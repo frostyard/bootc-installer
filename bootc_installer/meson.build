@@ -34,6 +34,7 @@ if blueprint_compiler.found()
       'gtk/done.blp',
       'gtk/layout-preferences.blp',
       'gtk/layout-yes-no.blp',
+      'gtk/mok-enrollment.blp',
       'gtk/progress.blp',
       'gtk/recovery-key.blp',
       'gtk/tour.blp',

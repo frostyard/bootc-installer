@@ -7,6 +7,7 @@ sources = [
   'run_async.py',
   'processor.py',
   'recipe.py',
+  'secure_install.py',
   'builder.py',
   'progress_parser.py',
   'codec_check.py',

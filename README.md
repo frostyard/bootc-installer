@@ -59,6 +59,21 @@ The `fisherman` Go backend executes a 9-step pipeline entirely from a JSON recip
 | `tpm2-luks` | LUKS2 auto-unlocked by TPM2 at boot (no passphrase prompt) |
 | `tpm2-luks-passphrase` | TPM2 primary + passphrase fallback. A recovery key is shown on screen and must be acknowledged before proceeding. |
 
+### Snosi secure installation
+
+Snosi schema-1 images opt into secure installation through explicit
+`secure_install` image-catalog metadata, never from their name. This forces the
+Fisherman secure path: UEFI Secure Boot and TPM 2.0 prerequisites, automatic
+LUKS2/Btrfs/systemd-boot/composefs layout, Cosign acceptance, and a mandatory
+external recovery passphrase. The installer passes Fisherman only two
+mode-0600, host-visible credential-file paths: the recovery credential and a
+generated one-time 16-character MokManager password. Parent-created files are
+removed after Fisherman exits; the generated MOK password is shown only on the
+successful-install acknowledgement page and must be recorded for next-boot MOK
+enrollment. Caller-owned autoinstall MOK files are never read, shown, or
+deleted. See [the secure-install guide](docs/secure-install.md) for the Dakota
+catalog requirement and CLI restage/ESP repair operations.
+
 ### Instant first boot
 
 These run automatically during every install — no user action required:
@@ -495,4 +510,3 @@ sudo FISHERMAN_BIN=/path/to/fisherman BOOT_VERIFY=1 pytest tests/integration/tes
 ```
 
 Real release qualification still requires destructive installs on lab hardware for TPM2, physical boot prompts, recovery-key/passphrase fallback, Windows slurp, and offline ISO paths. Use the repo runbook in [`.github/CI_CD_GUIDE.md`](.github/CI_CD_GUIDE.md#release-qualification-runbook) to separate what can be verified now from what remains hardware-only.
-

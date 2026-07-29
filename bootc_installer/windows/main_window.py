@@ -31,6 +31,8 @@ from bootc_installer.views.confirm import BootcConfirm
 from bootc_installer.views.done import BootcDone
 from bootc_installer.views.progress import BootcProgress
 from bootc_installer.views.recovery_key import BootcRecoveryKey
+from bootc_installer.views.mok_enrollment import BootcMokEnrollment
+from bootc_installer.utils.secure_install import acknowledgement_route
 
 try:
     from bootc_installer._version import VERSION as _APP_VERSION
@@ -68,10 +70,14 @@ class BootcWindow(Adw.ApplicationWindow):
         self.__view_confirm = BootcConfirm(self)
         self.__view_progress = BootcProgress(self)
         self.__view_recovery_key = BootcRecoveryKey(self)
+        self.__view_mok_enrollment = BootcMokEnrollment(self)
         self.__view_done = BootcDone(self)
 
         self.__install_is_encrypted = False
         self.__install_recovery_key = ""
+        self.__install_requires_mok_ack = False
+        self.__install_mok_password = ""
+        self.__acknowledgements = []
 
         # sensitivity-tracking state for the header btn_next
         self.__next_page_widget = None
@@ -106,6 +112,7 @@ class BootcWindow(Adw.ApplicationWindow):
         self.__reconnect_update_finals()
         self.__view_confirm.connect("installation-confirmed", self.on_installation_confirmed)
         self.__view_recovery_key.connect("recovery-key-acknowledged", self.__on_recovery_key_acknowledged)
+        self.__view_mok_enrollment.connect("mok-enrollment-acknowledged", self.__on_mok_enrollment_acknowledged)
 
         if os.environ.get("BOOTC_TEST"):
             self.carousel.connect("page-changed", self.__on_page_changed_test)
@@ -204,6 +211,7 @@ class BootcWindow(Adw.ApplicationWindow):
             self.carousel.remove(self.__view_confirm)
             self.carousel.remove(self.__view_progress)
             self.carousel.remove(self.__view_recovery_key)
+            self.carousel.remove(self.__view_mok_enrollment)
             self.carousel.remove(self.__view_done)
 
         self.__last_step_widget = None
@@ -237,6 +245,7 @@ class BootcWindow(Adw.ApplicationWindow):
         self.carousel.append(self.__view_confirm)
         self.carousel.append(self.__view_progress)
         self.carousel.append(self.__view_recovery_key)
+        self.carousel.append(self.__view_mok_enrollment)
         self.carousel.append(self.__view_done)
 
     def __on_page_changed(self, *args):
@@ -255,7 +264,7 @@ class BootcWindow(Adw.ApplicationWindow):
             self.__next_page_widget = None
             self.__next_handlers = []
 
-        is_final = page in [self.__view_progress, self.__view_recovery_key, self.__view_done]
+        is_final = page in [self.__view_progress, self.__view_recovery_key, self.__view_mok_enrollment, self.__view_done]
         is_confirm = page == self.__view_confirm
 
         if is_confirm:
@@ -346,6 +355,7 @@ class BootcWindow(Adw.ApplicationWindow):
             "confirm": self.__view_confirm,
             "progress": self.__view_progress,
             "recovery-key": self.__view_recovery_key,
+            "mok-enrollment": self.__view_mok_enrollment,
             "done": self.__view_done,
         }
         if normalized in static_pages:
@@ -418,8 +428,37 @@ class BootcWindow(Adw.ApplicationWindow):
             return False
         return encryption.get("type", "none") != "none"
 
+    def __recipe_uses_secure_install(self, recipe_path: str) -> bool:
+        try:
+            with open(recipe_path) as recipe_file:
+                return isinstance(json.load(recipe_file).get("secureInstall"), dict)
+        except (OSError, json.JSONDecodeError) as exc:
+            logger.warning("Failed to inspect secure install recipe %s: %s", recipe_path, exc)
+            return False
+
     def __on_recovery_key_acknowledged(self, *args):
-        self.__go_to_page(self.__view_done)
+        self.__show_next_acknowledgement()
+
+    def __on_mok_enrollment_acknowledged(self, *args):
+        self.__install_mok_password = ""
+        self.__show_next_acknowledgement()
+
+    def __show_next_acknowledgement(self):
+        if not self.__acknowledgements:
+            self.__go_to_page(self.__view_done)
+            return
+        next_page = self.__acknowledgements.pop(0)
+        if next_page == "recovery":
+            self.__view_recovery_key.set_recovery_key(self.__install_recovery_key)
+            self.__go_to_page(self.__view_recovery_key)
+        elif next_page == "mok":
+            self.__view_mok_enrollment.prepare(
+                self.__install_mok_password,
+                parent_generated=bool(self.__install_mok_password),
+            )
+            self.__go_to_page(self.__view_mok_enrollment)
+        else:
+            self.__go_to_page(self.__view_done)
 
     def __on_about_clicked(self, *args):
         dialog = Adw.AboutDialog(
@@ -473,6 +512,8 @@ class BootcWindow(Adw.ApplicationWindow):
     def on_installation_confirmed(self, *args):
         self.__install_is_encrypted = self.__finals_use_encryption()
         self.__install_recovery_key = ""
+        self.__install_requires_mok_ack = False
+        self.__install_mok_password = ""
 
         # Apply any hostname edit the user made on the confirm screen.
         hostname_override = self.__view_confirm.get_hostname_override()
@@ -487,11 +528,18 @@ class BootcWindow(Adw.ApplicationWindow):
             self.__view_progress.start_demo()
             return
 
-        recipe = Processor.gen_install_recipe(
-            self.recipe.get("log_file", "/tmp/vanilla_installer.log"),
-            self.finals,
-            self.recipe,
-        )
+        try:
+            recipe = Processor.gen_install_recipe(
+                self.recipe.get("log_file", "/tmp/vanilla_installer.log"),
+                self.finals,
+                self.recipe,
+            )
+        except Exception:
+            logger.exception("Could not prepare installation recipe")
+            self.toast(_("Could not prepare the installation. Review your choices and try again."))
+            self.set_installation_result(False, None)
+            return
+        self.__install_requires_mok_ack = self.__recipe_uses_secure_install(recipe)
         self.next()
         self.__view_progress.start(recipe)
 
@@ -504,6 +552,8 @@ class BootcWindow(Adw.ApplicationWindow):
         logger.info(f"Autoinstall: starting with recipe {self.__autoinstall_recipe}")
         self.__install_is_encrypted = self.__recipe_uses_encryption(self.__autoinstall_recipe)
         self.__install_recovery_key = ""
+        self.__install_requires_mok_ack = self.__recipe_uses_secure_install(self.__autoinstall_recipe)
+        self.__install_mok_password = ""
 
         progress_index = self.__find_page_index(self.__view_progress)
         if progress_index >= 0:
@@ -555,13 +605,15 @@ class BootcWindow(Adw.ApplicationWindow):
         toast.props.timeout = timeout
         self.toasts.add_toast(toast)
 
-    def set_installation_result(self, result, terminal, boot_id="", recovery_key="", elapsed_secs=0):
+    def set_installation_result(self, result, terminal, boot_id="", recovery_key="", elapsed_secs=0,
+                                mok_password=""):
         if result:
             logger.info("Installation complete!")
         else:
             logger.error("Installation failed!")
 
         self.__install_recovery_key = recovery_key or self.__install_recovery_key
+        self.__install_mok_password = mok_password if result else ""
 
         # Pass installed image ref to done screen so it can schedule a registry warmup.
         image_ref = None
@@ -574,13 +626,12 @@ class BootcWindow(Adw.ApplicationWindow):
         self.__view_done.set_result(result, terminal, boot_id, elapsed_secs,
                                     image_ref=image_ref)
 
-        if result and self.__install_is_encrypted and self.__install_recovery_key:
-            # Only show the recovery key screen when fisherman actually emitted a
-            # random recovery key (tpm2-luks only). luks-passphrase and
-            # tpm2-luks-passphrase use the user's own passphrase — no random key
-            # is generated, so there is nothing to display here.
-            self.__view_recovery_key.set_recovery_key(self.__install_recovery_key)
-            self.__go_to_page(self.__view_recovery_key)
+        if result:
+            self.__acknowledgements = acknowledgement_route(
+                self.__install_is_encrypted and bool(self.__install_recovery_key),
+                self.__install_requires_mok_ack,
+            )
+            self.__show_next_acknowledgement()
             return
 
         self.__go_to_page(self.__view_done)

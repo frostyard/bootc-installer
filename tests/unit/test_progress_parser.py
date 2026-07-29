@@ -211,6 +211,40 @@ class TestRecoveryKeyEvent:
         assert state["recovery_key"] == "alpha-beta"
 
 
+class TestSecureInstallEvents:
+    def test_secure_lifecycle_event_is_recorded_without_exposing_a_credential(self):
+        state = new_progress_state()
+
+        update = apply_progress_event(
+            json.dumps({
+                "type": "secure_install",
+                "action": "mok_enrollment",
+                "status": "staged",
+            }),
+            state,
+        )
+
+        assert update == {
+            "fraction": None,
+            "label": "Preparing Secure Boot enrollment…",
+            "pulse": False,
+            "complete": False,
+        }
+        assert state["secure_actions"] == {"mok_enrollment": "staged"}
+        assert state["recovery_key"] == ""
+
+    def test_unknown_secure_action_is_ignored(self):
+        state = new_progress_state()
+
+        update = apply_progress_event(
+            json.dumps({"type": "secure_install", "action": "future_action", "status": "passed"}),
+            state,
+        )
+
+        assert update is None
+        assert state["secure_actions"] == {}
+
+
 # ── Complete event ─────────────────────────────────────────────────────────────
 
 class TestCompleteEvent:

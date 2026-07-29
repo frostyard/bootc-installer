@@ -202,6 +202,17 @@ class TestConfirmUpdate(unittest.TestCase):
         }])
         self.assertGreater(len(obj.active_widgets), 0)
 
+    def test_secure_install_discloses_next_boot_mokmanager_approval(self):
+        rows = []
+        original_choice = confirm_mod.BootcChoiceEntry
+        confirm_mod.BootcChoiceEntry = lambda title, subtitle, icon, **kw: rows.append((title, subtitle)) or MagicMock()
+        self.addCleanup(setattr, confirm_mod, "BootcChoiceEntry", original_choice)
+        obj = self._make_obj()
+
+        obj.update([{"selected_image": "ghcr.io/example/secure:latest", "secure_install": True}])
+
+        self.assertIn(("Secure Boot", "Approve MOK enrollment in MokManager on the next boot"), rows)
+
     def test_update_with_custom_image_adds_widget(self):
         obj = self._make_obj()
         obj.update([{"custom_image": "ghcr.io/myorg/myimage:latest"}])
