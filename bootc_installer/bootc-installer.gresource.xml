@@ -9,6 +9,7 @@
     <file>gtk/done.ui</file>
     <file>gtk/progress.ui</file>
     <file>gtk/recovery-key.ui</file>
+    <file>gtk/mok-enrollment.ui</file>
     <file>gtk/tour.ui</file>
     <file>gtk/dialog.ui</file>
     <file>gtk/dialog-credits.ui</file>

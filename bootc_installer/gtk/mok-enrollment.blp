@@ -1,0 +1,72 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $BootcMokEnrollment: Adw.Bin {
+  halign: fill;
+  valign: fill;
+  hexpand: true;
+  vexpand: true;
+
+  Adw.Clamp {
+    maximum-size: 600;
+    tightening-threshold: 400;
+    valign: center;
+    halign: center;
+
+    Box {
+      orientation: vertical;
+      spacing: 24;
+      margin-start: 24;
+      margin-end: 24;
+      margin-top: 48;
+      margin-bottom: 48;
+
+      Image { icon-name: "channel-secure-symbolic"; pixel-size: 64; halign: center; }
+
+      Label {
+        label: _("Approve Secure Boot Enrollment");
+        halign: center;
+        justify: center;
+        wrap: true;
+        styles ["title-1"]
+      }
+
+      Label {
+        label: _("On the next boot, MokManager will ask you to enroll the Snosi certificate. Choose Enroll MOK, enter the password below when prompted, confirm the enrollment, and reboot when prompted. This approval is required before the installed system can boot.");
+        halign: center;
+        justify: center;
+        wrap: true;
+        max-width-chars: 54;
+      }
+
+      Adw.PreferencesGroup password_row {
+        title: _("One-time MOK password");
+
+        Adw.EntryRow password_value {
+          title: _("Password");
+          editable: false;
+        }
+      }
+
+      Label operator_password_note {
+        label: _("Use the MOK password supplied by your installer operator when MokManager prompts you.");
+        halign: center;
+        justify: center;
+        wrap: true;
+        max-width-chars: 54;
+      }
+
+      CheckButton ack_check {
+        label: _("I understand that I must approve the MOK enrollment on the next boot");
+        halign: center;
+      }
+
+      Button btn_continue {
+        label: _("Continue");
+        halign: center;
+        sensitive: false;
+        styles ["pill", "suggested-action"]
+      }
+    }
+  }
+}

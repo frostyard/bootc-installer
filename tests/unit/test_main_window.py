@@ -65,6 +65,34 @@ class TestDeltaAccessSafety(unittest.TestCase):
         page = DeltaPage()
         self.assertTrue(getattr(page, "delta", False))
 
+
+class TestRecipeGenerationFailureHandling(unittest.TestCase):
+    def test_confirmation_handles_recipe_generation_error_before_starting_progress(self):
+        with open(_MAIN_WINDOW_PATH) as source_file:
+            tree = ast.parse(source_file.read())
+
+        handler = next(
+            node for node in ast.walk(tree)
+            if isinstance(node, ast.FunctionDef) and node.name == "on_installation_confirmed"
+        )
+        guarded_generation = [
+            node for node in ast.walk(handler)
+            if isinstance(node, ast.Try)
+            and any(
+                isinstance(call, ast.Call)
+                and isinstance(call.func, ast.Attribute)
+                and call.func.attr == "gen_install_recipe"
+                for call in ast.walk(node)
+            )
+        ]
+        self.assertEqual(len(guarded_generation), 1)
+        self.assertTrue(any(
+            isinstance(call, ast.Call)
+            and isinstance(call.func, ast.Attribute)
+            and call.func.attr == "set_installation_result"
+            for call in ast.walk(guarded_generation[0].handlers[0])
+        ))
+
     def test_getattr_pattern_works_with_delta_false(self):
         """getattr returns False when delta exists but is False."""
         class DeltaPage:

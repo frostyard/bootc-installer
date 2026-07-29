@@ -57,6 +57,7 @@ from bootc_installer.windows.window_unsupported import BootcUnsupportedWindow  #
 from bootc_installer.windows.window_ram import BootcRamWindow  # noqa: E402
 from bootc_installer.windows.window_cpu import BootcCpuWindow  # noqa: E402
 from bootc_installer.core.system import Systeminfo  # noqa: E402
+from bootc_installer.utils.secure_install import cleanup_stale_credential_files  # noqa: E402
 logger_boot.info("All imports done")
 
 logger = logging.getLogger("Installer::Main")
@@ -146,6 +147,7 @@ class BootcInstaller(Adw.Application):
 
 def main(version):
     """The application's entry point."""
+    cleanup_stale_credential_files()
     logger.info("Creating BootcInstaller instance")
     app = BootcInstaller()
     logger.info("Calling app.run()")

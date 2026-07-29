@@ -19,6 +19,12 @@ import logging
 import os
 import tempfile
 
+from bootc_installer.utils.secure_install import (
+    create_mok_password_file,
+    create_recovery_key_file,
+    remove_recovery_key_file,
+)
+
 logger = logging.getLogger("Installer::Processor")
 
 
@@ -156,54 +162,9 @@ class Processor:
         if not image:
             logger.warning("No image/imgref found in finals or sys_recipe!")
 
-        # target_imgref is always the remote registry reference written into the
-        # installed system so that bootc upgrade tracks the correct upstream image.
-        target_imgref = image
-
-        # NVIDIA auto-detection: if the selected image has a nvidia_imgref in the
-        # manifest, use the nvidia image as the install source (it's on the ISO)
-        # and set targetImgref based on whether NVIDIA hardware is present.
-        nvidia_imgref = merged.get("nvidia_imgref", "")
-        if not nvidia_imgref:
-            nvidia_imgref = _find_nvidia_imgref_for(image)
-        if nvidia_imgref:
-            from bootc_installer.core.system import Systeminfo
-            if Systeminfo.has_nvidia_gpu():
-                # NVIDIA present: install nvidia, track nvidia for updates
-                image = nvidia_imgref
-                target_imgref = nvidia_imgref
-                logger.info(f"NVIDIA GPU detected: using {nvidia_imgref} for install and updates")
-            else:
-                # No NVIDIA: install nvidia (it's on the ISO), but track the base image
-                # so bootc rebases to the lighter image on first update
-                target_imgref = image  # base (non-nvidia) imgref
-                image = nvidia_imgref  # install from the nvidia image on the ISO
-                logger.info(
-                    f"No NVIDIA GPU: installing {nvidia_imgref} (from ISO), "
-                    f"tracking {target_imgref} for updates"
-                )
-
-        # local_imgref (live ISO only) is an optional install *source* override — e.g.
-        # "containers-storage:ghcr.io/org/image:tag" for offline installs from a
-        # pre-populated squashfs.  It is passed to fisherman as --source-imgref while
-        # target_imgref (the remote ref) is passed as --target-imgref unchanged.
-        local_imgref = sys_recipe.get("local_imgref", "")
-        if local_imgref and user_selected_ref and user_selected_ref != sys_recipe.get("imgref", ""):
-            # The user explicitly picked an image other than the one baked on
-            # the ISO — the offline source doesn't contain it, so install from
-            # the registry instead of silently substituting the baked image.
-            logger.info(
-                f"Selected image {user_selected_ref} differs from baked "
-                f"{sys_recipe.get('imgref', '')} — ignoring local_imgref, "
-                f"pulling from registry"
-            )
-            local_imgref = ""
-        if local_imgref:
-            logger.info(
-                f"local_imgref override: install source={local_imgref}, "
-                f"installed system tracks={target_imgref}"
-            )
-            image = local_imgref
+        # Preserve the selected remote registry ref before optional source substitutions.
+        remote_image = image
+        target_imgref = remote_image
 
         # --- Hostname ---
         # Use hardware-derived hostname if no explicit hostname was set by the user.
@@ -220,6 +181,7 @@ class Processor:
         # --- SELinux / unified storage / composefs / image type ---
         selinux_disabled = sys_recipe.get("selinuxDisabled", False)
         cosign_pub_key = sys_recipe.get("cosignPubKey", "")
+        secure_install = bool(merged.get("secure_install", False))
         unified_storage = sys_recipe.get("unifiedStorage", True)
         composefs_backend = bool(merged.get("composefs_backend", False))
         image_type = merged.get("image_type", "bootc") or "bootc"
@@ -239,6 +201,7 @@ class Processor:
                 composefs_backend = bool(_img.get("composefs", composefs_backend))
                 bootloader        = _img.get("bootloader", bootloader) or bootloader
                 flatpak_var_path  = _img.get("flatpak_var_path", flatpak_var_path) or flatpak_var_path
+                secure_install = bool(_img.get("secure_install", secure_install))
                 logger.info("Recipe images fallback: filesystem=%s composefs=%s bootloader=%s",
                             image_filesystem, composefs_backend, bootloader)
             else:
@@ -254,6 +217,7 @@ class Processor:
                     composefs_backend = bool(_img.get("composefs", composefs_backend))
                     bootloader        = _img.get("bootloader", bootloader) or bootloader
                     flatpak_var_path  = _img.get("flatpak_var_path", flatpak_var_path) or flatpak_var_path
+                    secure_install = bool(_img.get("secure_install", secure_install))
                     logger.info("Live ISO fallback from images.json: filesystem=%s composefs=%s bootloader=%s",
                                 image_filesystem, composefs_backend, bootloader)
                 except Exception as _e:
@@ -264,6 +228,57 @@ class Processor:
             filesystem = image_filesystem
             if filesystem == "btrfs":
                 btrfs_subvolumes = disk_info.get("btrfsSubvolumes", False) if isinstance(disk_info, dict) else False
+
+        recovery_key_file = ""
+        mok_password_file = ""
+        if secure_install:
+            # Fisherman's secure API accepts only a host-visible credential file.
+            # Keep the UI value out of the recipe and force its fail-closed shape.
+            if not encryption_passphrase:
+                raise ValueError("secure installation requires a recovery passphrase")
+            filesystem = "btrfs"
+            btrfs_subvolumes = False
+            composefs_backend = True
+            bootloader = "systemd"
+            encryption_type = "luks-passphrase"
+            encryption_passphrase = ""
+            # Secure composition must pull the exact signed remote selection.
+            image = remote_image
+            target_imgref = remote_image
+        else:
+            # NVIDIA source selection and local ISO storage are non-secure install
+            # conveniences. They must not replace secure signed registry refs.
+            nvidia_imgref = merged.get("nvidia_imgref", "")
+            if not nvidia_imgref:
+                nvidia_imgref = _find_nvidia_imgref_for(image)
+            if nvidia_imgref:
+                from bootc_installer.core.system import Systeminfo
+                if Systeminfo.has_nvidia_gpu():
+                    image = nvidia_imgref
+                    target_imgref = nvidia_imgref
+                    logger.info(f"NVIDIA GPU detected: using {nvidia_imgref} for install and updates")
+                else:
+                    target_imgref = image
+                    image = nvidia_imgref
+                    logger.info(
+                        f"No NVIDIA GPU: installing {nvidia_imgref} (from ISO), "
+                        f"tracking {target_imgref} for updates"
+                    )
+
+            local_imgref = sys_recipe.get("local_imgref", "")
+            if local_imgref and user_selected_ref and user_selected_ref != sys_recipe.get("imgref", ""):
+                logger.info(
+                    f"Selected image {user_selected_ref} differs from baked "
+                    f"{sys_recipe.get('imgref', '')} — ignoring local_imgref, "
+                    f"pulling from registry"
+                )
+                local_imgref = ""
+            if local_imgref:
+                logger.info(
+                    f"local_imgref override: install source={local_imgref}, "
+                    f"installed system tracks={target_imgref}"
+                )
+                image = local_imgref
 
         # --- User account ---
         user_info = merged.get("user", {})
@@ -277,10 +292,11 @@ class Processor:
             "disk": disk_device,
             "filesystem": filesystem,
             "btrfsSubvolumes": btrfs_subvolumes,
-            "encryption": {
-                "type": encryption_type,
-                "passphrase": encryption_passphrase,
-            },
+            "encryption": (
+                {"type": encryption_type}
+                if secure_install
+                else {"type": encryption_type, "passphrase": encryption_passphrase}
+            ),
             "image": image,
             "targetImgref": target_imgref,
             "selinuxDisabled": selinux_disabled,
@@ -304,6 +320,8 @@ class Processor:
             recipe["flatpakVarPath"] = flatpak_var_path
         if cosign_pub_key:
             recipe["cosignPubKey"] = cosign_pub_key
+        if secure_install:
+            recipe["cosignPubKey"] = "/usr/lib/snosi/cosign.pub"
         if "slurp" in merged and merged["slurp"] is not None:
             recipe["slurp"] = merged["slurp"]
         # Easter egg: always attempt to rescue wallpapers from existing Windows installs
@@ -333,15 +351,31 @@ class Processor:
         else:
             tmp_dir = None
 
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            suffix=".json",
-            prefix="bootc-recipe-",
-            dir=tmp_dir,
-            delete=False,
-        ) as f:
-            json.dump(recipe, f, indent=2)
-            recipe_path = f.name
+        try:
+            if secure_install:
+                recovery_key_file = create_recovery_key_file(
+                    enc_info.get("encryption_key", "")
+                )
+                mok_password_file, mok_password = create_mok_password_file()
+                del mok_password
+                recipe["secureInstall"] = {
+                    "recoveryKeyFile": recovery_key_file,
+                    "mokPasswordFile": mok_password_file,
+                }
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                suffix=".json",
+                prefix="bootc-recipe-",
+                dir=tmp_dir,
+                delete=False,
+            ) as f:
+                json.dump(recipe, f, indent=2)
+                recipe_path = f.name
+        except BaseException:
+            for credential_path in (recovery_key_file, mok_password_file):
+                if credential_path:
+                    remove_recovery_key_file(credential_path)
+            raise
 
         logger.info(f"Fisherman recipe written to {recipe_path}")
         return recipe_path

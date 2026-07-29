@@ -211,6 +211,83 @@ class TestBootcDefaultEncryptionPasswordChanged(unittest.TestCase):
         obj.encryption_pass_entry_confirm.remove_css_class.assert_called_once_with("error")
         obj.btn_next.set_sensitive.assert_called_once_with(False)
 
+
+class TestBootcDefaultEncryptionSecureStateRefresh(unittest.TestCase):
+    def setUp(self):
+        self.mod = _import_encryption_fresh()
+        self.system_mod = types.ModuleType("bootc_installer.core.system")
+        self.system_mod.Systeminfo = type("Systeminfo", (), {
+            "has_tpm2": staticmethod(lambda: False),
+            "is_uefi": staticmethod(lambda: True),
+            "has_secure_boot": staticmethod(lambda: True),
+        })
+        self.original_system = sys.modules.get("bootc_installer.core.system")
+        sys.modules["bootc_installer.core.system"] = self.system_mod
+        self.secure_selected = True
+        image_step = MagicMock()
+        image_step.get_finals.side_effect = lambda: {"secure_install": self.secure_selected}
+        self.obj = self.mod.BootcDefaultEncryption.__new__(self.mod.BootcDefaultEncryption)
+        self.obj._BootcDefaultEncryption__window = types.SimpleNamespace(image_step=image_step)
+        self.obj.use_encryption_switch = MagicMock()
+        self.obj.use_encryption_switch.get_active.return_value = True
+        self.obj.tpm2_switch = MagicMock()
+        self.obj.encryption_pass_entry = MagicMock()
+        self.obj.encryption_pass_entry.get_text.return_value = "valid passphrase"
+        self.obj.encryption_pass_entry_confirm = MagicMock()
+        self.obj.encryption_pass_entry_confirm.get_text.return_value = "valid passphrase"
+        self.obj.strength_label = MagicMock()
+        self.obj.secure_requirement_label = MagicMock()
+        self.obj.btn_next = MagicMock()
+        self.obj.password_filled = True
+
+    def tearDown(self):
+        if self.original_system is None:
+            sys.modules.pop("bootc_installer.core.system", None)
+        else:
+            sys.modules["bootc_installer.core.system"] = self.original_system
+
+    def _make_obj(self, password, confirm, *, use_encryption=True):
+        obj = self.mod.BootcDefaultEncryption.__new__(self.mod.BootcDefaultEncryption)
+        obj.encryption_pass_entry = MagicMock()
+        obj.encryption_pass_entry.get_text.return_value = password
+        obj.encryption_pass_entry_confirm = MagicMock()
+        obj.encryption_pass_entry_confirm.get_text.return_value = confirm
+        obj.strength_label = MagicMock()
+        obj.use_encryption_switch = MagicMock()
+        obj.use_encryption_switch.get_active.return_value = use_encryption
+        obj.btn_next = MagicMock()
+        obj.password_filled = False
+        return obj
+
+    def test_activation_applies_secure_gate_after_image_selection(self):
+        self.obj.on_shown({})
+
+        self.assertTrue(self.obj._BootcDefaultEncryption__secure_install)
+        self.obj.use_encryption_switch.set_sensitive.assert_called_with(False)
+        self.obj.tpm2_switch.set_active.assert_called_with(False)
+        self.obj.tpm2_switch.set_sensitive.assert_called_with(False)
+        self.obj.secure_requirement_label.set_visible.assert_called_with(True)
+        self.obj.btn_next.set_sensitive.assert_called_with(False)
+
+    def test_activation_reverts_secure_gate_after_non_secure_image_selection(self):
+        self.obj.on_shown({})
+        self.secure_selected = False
+        self.system_mod.Systeminfo.has_tpm2 = staticmethod(lambda: True)
+        self.obj.use_encryption_switch.reset_mock()
+        self.obj.tpm2_switch.reset_mock()
+        self.obj.secure_requirement_label.reset_mock()
+        self.obj.btn_next.reset_mock()
+
+        self.obj.on_shown({})
+        finals = self.obj.get_finals()
+
+        self.assertFalse(self.obj._BootcDefaultEncryption__secure_install)
+        self.obj.use_encryption_switch.set_sensitive.assert_called_with(True)
+        self.obj.tpm2_switch.set_sensitive.assert_called_with(True)
+        self.obj.secure_requirement_label.set_visible.assert_called_with(False)
+        self.obj.btn_next.set_sensitive.assert_called_with(True)
+        self.assertEqual(finals["encryption"]["type"], "tpm2-luks-passphrase")
+
     def test_password_changed_marks_short_simple_password_as_weak(self):
         obj = self._make_obj("abc123", "abc123")
 

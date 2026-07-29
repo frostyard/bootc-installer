@@ -728,6 +728,7 @@ class BootcDefaultDisk(Adw.Bin):
         self.__var_registry_disks = []   # BootcDefaultDiskEntry rows for var picker
 
         self.min_disk_size = self.__window.recipe.get("min_disk_size", 51200)
+        self.__configured_min_disk_size = self.min_disk_size
         self.disk_space_err_label.set_label(
             self.disk_space_err_label.get_label()
             % Diskutils.pretty_size(self.min_disk_size * 1_048_576)
@@ -848,6 +849,7 @@ class BootcDefaultDisk(Adw.Bin):
         if not isinstance(finals, dict):
             finals = {}
         supported = finals.get("supported_filesystems") or []
+        secure_install = bool(finals.get("secure_install", False))
         default_hostname = finals.get("default_hostname") or ""
         if not isinstance(default_hostname, str):
             default_hostname = ""
@@ -862,6 +864,26 @@ class BootcDefaultDisk(Adw.Bin):
             except Exception:
                 unique_hostname = default_hostname
             self.hostname_entry.set_text(unique_hostname)
+        if secure_install:
+            # Fisherman's schema-1 secure API permits only its automatic,
+            # single encrypted Btrfs layout and a 30 GiB minimum target.
+            supported = ["btrfs"]
+            self.min_disk_size = max(self.min_disk_size, 30 * 1024)
+            if self.var_disk_switch is not None:
+                self.var_disk_switch.set_active(False)
+                self.var_disk_switch.set_sensitive(False)
+            if self.group_var_disks is not None:
+                self.group_var_disks.set_visible(False)
+            if self.group_var_disk_existing is not None:
+                self.group_var_disk_existing.set_visible(False)
+        else:
+            self.min_disk_size = getattr(
+                self,
+                "_BootcDefaultDisk__configured_min_disk_size",
+                getattr(self, "min_disk_size", 51200),
+            )
+            if self.var_disk_switch is not None:
+                self.var_disk_switch.set_sensitive(True)
         self.__setup_filesystem_row(supported)
 
     # Maps filesystem type → (required tool, package name)

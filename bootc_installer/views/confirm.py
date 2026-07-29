@@ -156,6 +156,14 @@ class BootcConfirm(Adw.Bin):
                             "channel-secure-symbolic",
                         )
                     )
+                elif key == "secure_install" and value:
+                    self.active_widgets.append(
+                        BootcChoiceEntry(
+                            _("Secure Boot"),
+                            _("Approve MOK enrollment in MokManager on the next boot"),
+                            "channel-secure-symbolic",
+                        )
+                    )
                 elif key == "hostname":
                     entry_row = Adw.EntryRow()
                     entry_row.set_title(_("Hostname"))

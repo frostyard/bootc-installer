@@ -27,6 +27,20 @@ _FRIENDLY_STEP_LABELS: dict[str, str] = {
 
 # Matches "Pulling image: layer 23/71" substep messages from fisherman.
 _RE_LAYER_PROGRESS = re.compile(r"Pulling image: layer (\d+)/(\d+)")
+_SECURE_ACTIONS = {
+    "oci_acceptance",
+    "contract_validation",
+    "tpm_enrollment",
+    "mok_enrollment",
+    "provenance",
+}
+_SECURE_EVENT_LABELS = {
+    ("oci_acceptance", "passed"): "Verifying signed system image…",
+    ("contract_validation", "passed"): "Validating secure installation…",
+    ("tpm_enrollment", "passed"): "Configuring TPM auto-unlock…",
+    ("mok_enrollment", "staged"): "Preparing Secure Boot enrollment…",
+    ("provenance", "written"): "Recording installation details…",
+}
 
 
 def new_progress_state(distro_name: str = "") -> dict:
@@ -45,6 +59,7 @@ def new_progress_state(distro_name: str = "") -> dict:
         "seen_substeps": set(),
         "boot_id": "",
         "recovery_key": "",
+        "secure_actions": {},
         "distro_name": distro_name,
     }
 
@@ -125,6 +140,16 @@ def apply_progress_event(line: str, state: dict) -> dict | None:
 
     if event_type == "recovery_key":
         state["recovery_key"] = event.get("key", "")
+        return None
+
+    if event_type == "secure_install":
+        action = event.get("action")
+        status = event.get("status")
+        if isinstance(action, str) and action in _SECURE_ACTIONS and isinstance(status, str):
+            state["secure_actions"][action] = status
+            label = _SECURE_EVENT_LABELS.get((action, status))
+            if label:
+                return {"fraction": None, "label": label, "pulse": False, "complete": False}
         return None
 
     if event_type == "complete":

@@ -494,6 +494,27 @@ class TestBootcDefaultDiskRefreshFromImageStep(unittest.TestCase):
         obj.hostname_entry.set_text.assert_not_called()
         getattr(obj, "_BootcDefaultDisk__setup_filesystem_row").assert_called_once_with(["xfs"])
 
+    def test_secure_refresh_uses_and_then_restores_configured_minimum_size(self):
+        obj = self._make_obj("", {"secure_install": True, "supported_filesystems": ["xfs"]})
+        obj.min_disk_size = 20 * 1024
+        obj._BootcDefaultDisk__configured_min_disk_size = 20 * 1024
+        obj.var_disk_switch = MagicMock()
+        obj.group_var_disks = MagicMock()
+        obj.group_var_disk_existing = MagicMock()
+
+        obj._BootcDefaultDisk__refresh_from_image_step()
+        self.assertEqual(obj.min_disk_size, 30 * 1024)
+        getattr(obj, "_BootcDefaultDisk__setup_filesystem_row").assert_called_with(["btrfs"])
+
+        getattr(obj, "_BootcDefaultDisk__window").image_step.get_finals.return_value = {
+            "secure_install": False,
+            "supported_filesystems": ["xfs"],
+        }
+        obj._BootcDefaultDisk__refresh_from_image_step()
+
+        self.assertEqual(obj.min_disk_size, 20 * 1024)
+        obj.var_disk_switch.set_sensitive.assert_called_with(True)
+
 
 class TestCheckVarDiskExisting(unittest.TestCase):
     """Regression tests for the /var-disk existing-filesystem probe.

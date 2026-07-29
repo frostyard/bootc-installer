@@ -39,6 +39,10 @@ _FISHERMAN_LOG_PATH = os.path.join(_FISHERMAN_CACHE_DIR, "fisherman-output.log")
 
 from bootc_installer.utils.progress_parser import apply_progress_event, new_progress_state, _RE_LAYER_PROGRESS  # noqa: E402
 from bootc_installer.utils.codec_check import check_codecs_present  # noqa: E402
+from bootc_installer.utils.secure_install import (  # noqa: E402
+    cleanup_credentials_from_recipe,
+    get_managed_mok_password_from_recipe,
+)
 
 
 def _media_stream_is_prepared(media_stream) -> bool:
@@ -168,6 +172,7 @@ class BootcProgress(Gtk.Box):
         self.__progress_state = new_progress_state(distro_name=self.__distro_name())
         self.__boot_id = ""  # EFI boot entry ID from fisherman complete event
         self.__recovery_key = ""
+        self.__mok_password = ""
         self.__recipe_path = None   # path to recipe JSON (for cleanup)
         self.__start_time = None
         self.__elapsed_timer_id = None
@@ -552,10 +557,13 @@ class BootcProgress(Gtk.Box):
         self.__pause_install_video()
         # Securely delete the recipe file — it contains plaintext passphrases
         # and passwords that must not persist on disk after install.
+        if ret == 0:
+            self.__mok_password = get_managed_mok_password_from_recipe(self.__recipe_path)
         self.__cleanup_recipe_file()
         self.__cleanup_video_tmp()
         self.__window.set_installation_result(
-            ret == 0, None, self.__boot_id, self.__recovery_key, elapsed_secs
+            ret == 0, None, self.__boot_id, self.__recovery_key, elapsed_secs,
+            self.__mok_password,
         )
         return False
 
@@ -564,6 +572,7 @@ class BootcProgress(Gtk.Box):
         recipe_path = getattr(self, "_BootcProgress__recipe_path", None)
         if not recipe_path:
             return
+        cleanup_credentials_from_recipe(recipe_path)
         try:
             os.unlink(recipe_path)
             logger.info("Deleted recipe file: %s", recipe_path)
@@ -668,13 +677,13 @@ class BootcProgress(Gtk.Box):
             self.__window.set_installation_result(False, None)
             return
 
+        # Track the recipe before staging so every launch failure also removes
+        # the parent-created secure recovery credential named by the recipe.
+        self.__recipe_path = recipe
         if not _stage_fisherman_on_host():
+            self.__cleanup_recipe_file()
             self.__window.set_installation_result(False, None)
             return
-
-        # Track the recipe path so we can securely delete it after install.
-        # The recipe contains plaintext passphrases and passwords.
-        self.__recipe_path = recipe
 
         argv = _fisherman_argv_direct(recipe)
         os.makedirs(_FISHERMAN_CACHE_DIR, exist_ok=True)
@@ -692,6 +701,7 @@ class BootcProgress(Gtk.Box):
         self.__progress_state = new_progress_state(distro_name=self.__distro_name())
         self.__boot_id = ""
         self.__recovery_key = ""
+        self.__mok_password = ""
         self.__pulse_active = True
         self.__set_progress_fraction(0.0)
         self.progressbar_text.set_label(_("Installing"))
@@ -706,7 +716,13 @@ class BootcProgress(Gtk.Box):
         self.__start_elapsed_timer()
         # bash handles writing stdout+stderr to the log file via shell redirection.
         # Do NOT pass stdout= here — flatpak-spawn uses D-Bus, not a real pipe fd.
-        self.__proc = subprocess.Popen(argv)
+        try:
+            self.__proc = subprocess.Popen(argv)
+        except OSError as e:
+            logger.error("Failed to launch fisherman: %s", e)
+            self.__cleanup_recipe_file()
+            self.__window.set_installation_result(False, None)
+            return
         logger.info("Fisherman PID: %s", self.__proc.pid)
         GLib.timeout_add(500, self.__poll_proc)
         self._start_log_watcher()

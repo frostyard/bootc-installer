@@ -32,6 +32,7 @@ class BootcDefaultEncryption(Adw.Bin):
     encryption_pass_entry = Gtk.Template.Child()
     encryption_pass_entry_confirm = Gtk.Template.Child()
     strength_label = Gtk.Template.Child()
+    secure_requirement_label = Gtk.Template.Child()
 
     password_filled = False
 
@@ -55,8 +56,43 @@ class BootcDefaultEncryption(Adw.Bin):
 
         # Default: encryption ON, TPM2 ON if hardware present
         from bootc_installer.core.system import Systeminfo
+        self.__secure_install = False
+        self.__secure_requirements_met = True
         self.use_encryption_switch.set_active(True)
         self.tpm2_switch.set_active(Systeminfo.has_tpm2())
+        self.__refresh_secure_install_state()
+
+    def on_shown(self, _context: dict):
+        """Refresh constraints after the image step changes and rebuilds the wizard."""
+        self.__refresh_secure_install_state()
+
+    def __refresh_secure_install_state(self):
+        from bootc_installer.core.system import Systeminfo
+
+        image_step = getattr(self.__window, "image_step", None)
+        image_finals = image_step.get_finals() if image_step is not None else {}
+        secure_install = bool(image_finals.get("secure_install", False))
+        was_secure = getattr(self, "_BootcDefaultEncryption__secure_install", False)
+        self.__secure_install = secure_install
+
+        if secure_install:
+            self.use_encryption_switch.set_active(True)
+            self.use_encryption_switch.set_sensitive(False)
+            # Fisherman owns TPM enrollment from the installed UKI. The recipe
+            # remains luks-passphrase and carries no TPM mode selected by the UI.
+            self.tpm2_switch.set_active(False)
+            self.tpm2_switch.set_sensitive(False)
+            self.__secure_requirements_met = (
+                Systeminfo.has_tpm2() and Systeminfo.is_uefi() and Systeminfo.has_secure_boot()
+            )
+            self.secure_requirement_label.set_visible(not self.__secure_requirements_met)
+        else:
+            self.use_encryption_switch.set_sensitive(True)
+            self.tpm2_switch.set_sensitive(True)
+            if was_secure:
+                self.tpm2_switch.set_active(Systeminfo.has_tpm2())
+            self.__secure_requirements_met = True
+            self.secure_requirement_label.set_visible(False)
 
         self.__update_btn_next()
 
@@ -74,6 +110,14 @@ class BootcDefaultEncryption(Adw.Bin):
         if not use_enc:
             return {"encryption": {"use_encryption": False, "encryption_key": ""}}
         passphrase = self.encryption_pass_entry.get_text()
+        if getattr(self, "_BootcDefaultEncryption__secure_install", False):
+            return {
+                "encryption": {
+                    "use_encryption": True,
+                    "type": "luks-passphrase",
+                    "encryption_key": passphrase,
+                }
+            }
         enc_type = "tpm2-luks-passphrase" if self.tpm2_switch.get_active() else "luks-passphrase"
         return {
             "encryption": {
@@ -142,5 +186,7 @@ class BootcDefaultEncryption(Adw.Bin):
 
     def __update_btn_next(self):
         use_enc = self.use_encryption_switch.get_active()
-        rule = not use_enc or self.password_filled
+        rule = (not use_enc or self.password_filled) and getattr(
+            self, "_BootcDefaultEncryption__secure_requirements_met", True
+        )
         self.btn_next.set_sensitive(rule)
