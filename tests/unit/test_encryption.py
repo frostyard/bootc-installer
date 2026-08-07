@@ -264,7 +264,7 @@ class TestBootcDefaultEncryptionSecureStateRefresh(unittest.TestCase):
 
         self.assertTrue(self.obj._BootcDefaultEncryption__secure_install)
         self.obj.use_encryption_switch.set_sensitive.assert_called_with(False)
-        self.obj.tpm2_switch.set_active.assert_called_with(False)
+        self.obj.tpm2_switch.set_active.assert_called_with(True)
         self.obj.tpm2_switch.set_sensitive.assert_called_with(False)
         self.obj.secure_requirement_label.set_visible.assert_called_with(True)
         self.obj.btn_next.set_sensitive.assert_called_with(False)
