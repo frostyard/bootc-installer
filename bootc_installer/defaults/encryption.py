@@ -78,9 +78,10 @@ class BootcDefaultEncryption(Adw.Bin):
         if secure_install:
             self.use_encryption_switch.set_active(True)
             self.use_encryption_switch.set_sensitive(False)
-            # Fisherman owns TPM enrollment from the installed UKI. The recipe
-            # remains luks-passphrase and carries no TPM mode selected by the UI.
-            self.tpm2_switch.set_active(False)
+            # Fisherman owns mandatory TPM enrollment from the installed UKI.
+            # Keep the locked switch visibly enabled even though the recipe
+            # remains luks-passphrase and carries no UI-selected TPM mode.
+            self.tpm2_switch.set_active(True)
             self.tpm2_switch.set_sensitive(False)
             self.__secure_requirements_met = (
                 Systeminfo.has_tpm2() and Systeminfo.is_uefi() and Systeminfo.has_secure_boot()
