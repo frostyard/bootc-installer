@@ -4,6 +4,11 @@ import os
 import re
 import subprocess
 
+_SECURE_BOOT_EFIVAR = (
+    "/sys/firmware/efi/efivars/"
+    "SecureBoot-8be4df61-93ca-11d2-aa0d-00e098032b8c"
+)
+
 
 # Vendor name normalization: raw DMI vendor → clean short name.
 _VENDOR_MAP = {
@@ -212,14 +217,23 @@ class Systeminfo:
         if Systeminfo._secure_boot is not None:
             return Systeminfo._secure_boot
         try:
-            entries = glob.glob("/sys/firmware/efi/efivars/SecureBoot-*")
-            if not entries:
-                Systeminfo._secure_boot = False
-                return False
-            with open(entries[0], "rb") as secure_boot_file:
-                value = secure_boot_file.read()
-                Systeminfo._secure_boot = len(value) >= 5 and value[4:5] == b"\x01"
-        except OSError:
+            if os.path.exists("/.flatpak-info"):
+                result = subprocess.run(
+                    ["flatpak-spawn", "--host", "cat", _SECURE_BOOT_EFIVAR],
+                    check=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.DEVNULL,
+                )
+                value = result.stdout
+            else:
+                entries = glob.glob("/sys/firmware/efi/efivars/SecureBoot-*")
+                if not entries:
+                    Systeminfo._secure_boot = False
+                    return False
+                with open(entries[0], "rb") as secure_boot_file:
+                    value = secure_boot_file.read()
+            Systeminfo._secure_boot = len(value) >= 5 and value[4:5] == b"\x01"
+        except (OSError, subprocess.SubprocessError):
             Systeminfo._secure_boot = False
         return Systeminfo._secure_boot
 

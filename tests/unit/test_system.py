@@ -1,6 +1,7 @@
 """Unit tests for core/system.py — GPU detection, TPM2, hostname generation."""
 
 import os
+import subprocess
 import sys
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -334,6 +335,66 @@ class TestSysteminfoGpuAndTpmCaching:
         monkeypatch.setattr("bootc_installer.core.system.os.path.exists", lambda path: True)
 
         assert Systeminfo.has_tpm2() is True
+
+
+class TestSecureBootDetection:
+    def setup_method(self):
+        Systeminfo._secure_boot = None
+
+    def test_reads_enabled_efivar_from_host_inside_flatpak(self, monkeypatch):
+        monkeypatch.setattr(
+            "bootc_installer.core.system.os.path.exists",
+            lambda path: path == "/.flatpak-info",
+        )
+        run = patch(
+            "bootc_installer.core.system.subprocess.run",
+            return_value=SimpleNamespace(stdout=b"\x07\x00\x00\x00\x01"),
+        )
+
+        with run as mocked_run:
+            assert Systeminfo.has_secure_boot() is True
+
+        mocked_run.assert_called_once_with(
+            [
+                "flatpak-spawn",
+                "--host",
+                "cat",
+                (
+                    "/sys/firmware/efi/efivars/"
+                    "SecureBoot-8be4df61-93ca-11d2-aa0d-00e098032b8c"
+                ),
+            ],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
+
+    def test_reads_disabled_efivar_from_host_inside_flatpak(self, monkeypatch):
+        monkeypatch.setattr("bootc_installer.core.system.os.path.exists", lambda path: True)
+        monkeypatch.setattr(
+            "bootc_installer.core.system.subprocess.run",
+            lambda *args, **kwargs: SimpleNamespace(stdout=b"\x07\x00\x00\x00\x00"),
+        )
+
+        assert Systeminfo.has_secure_boot() is False
+
+    def test_host_query_failure_fails_closed(self, monkeypatch):
+        monkeypatch.setattr("bootc_installer.core.system.os.path.exists", lambda path: True)
+        monkeypatch.setattr(
+            "bootc_installer.core.system.subprocess.run",
+            lambda *args, **kwargs: (_ for _ in ()).throw(OSError("spawn failed")),
+        )
+
+        assert Systeminfo.has_secure_boot() is False
+
+    def test_result_is_cached(self, monkeypatch):
+        Systeminfo._secure_boot = True
+        monkeypatch.setattr(
+            "bootc_installer.core.system.subprocess.run",
+            lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("cache should be used")),
+        )
+
+        assert Systeminfo.has_secure_boot() is True
 
 
 class TestGenerateHostname:
