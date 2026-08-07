@@ -17,3 +17,10 @@ installer.log
 org.tunaos.Installer.flatpak
 org.bootcinstaller.Installer.Devel.flatpak
 *.flatpak
+
+# Test/lint artefacts. These appear on any local `pytest --cov` or `ruff` run
+# and were showing up as untracked noise in every status check.
+.coverage
+coverage.xml
+.pytest_cache/
+.ruff_cache/
