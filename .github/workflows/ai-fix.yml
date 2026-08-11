@@ -1,0 +1,39 @@
+name: AI fix intake
+
+on:
+  issues:
+    types: [labeled]
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: Issue number to prepare for an agent
+        required: true
+        type: number
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  prepare:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.label.name == 'ai-fix-requested' && github.event.issue.pull_request == null)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate and acknowledge the request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ inputs.issue_number || github.event.issue.number }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          state=$(gh issue view "$ISSUE_NUMBER" --repo "$REPOSITORY" --json state --jq .state)
+          if [ "$state" != "OPEN" ]; then
+            echo "Issue #$ISSUE_NUMBER is not open" >&2
+            exit 1
+          fi
+          gh issue comment "$ISSUE_NUMBER" --repo "$REPOSITORY" --body-file - <<'EOF'
+          The automated fix intake accepted this request. An agent may propose a pull
+          request, but required checks and human review still apply. Installer-path
+          changes also require the complete-install evidence described in `AGENTS.md`.
+          EOF

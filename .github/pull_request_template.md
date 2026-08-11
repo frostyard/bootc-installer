@@ -19,6 +19,12 @@
 - [ ] fisherman changes: `go vet ./...` + `go test ./...` pass (if applicable)
 - [ ] UI tested locally with `./run-dev.sh` or `BOOTC_DEMO=1` (if UI changed)
 
+## Risk
+
+- Risk tier: <!-- 1 (Low), 2 (Moderate), 3 (High), or 4 (Critical); see docs/risk-tiers.md -->
+- Mitigations and residual risk: <!-- tests, review focus, rollback, or N/A -->
+- [ ] Tier 4 changes include complete-install and successful-reboot evidence
+
 ## Checklist
 
 - [ ] Conventional commit (`feat:`, `fix:`, `chore:`, `docs:`, `test:`, `refactor:`)
