@@ -1,0 +1,70 @@
+name: CI Matrix
+
+on:
+  pull_request:
+    branches:
+      - dev
+      - prod
+  push:
+    branches:
+      - dev
+      - prod
+  merge_group:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-matrix-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python-unit:
+    name: Python ${{ matrix.python-version }} unit tests
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version:
+          - "3.11"
+          - "3.12"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install test dependencies
+        run: python -m pip install pytest pytest-cov
+
+      - name: Run unit suite
+        run: python -m pytest tests/unit/ -q --tb=short
+
+  static-analysis:
+    name: Python static analysis
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Ruff
+        run: python -m pip install ruff
+
+      - name: Run Ruff
+        run: python -m ruff check bootc_installer tests
+
+      - name: Validate JSON configuration
+        run: |
+          python -m json.tool .claude/settings.json >/dev/null
+          python -m json.tool flatpak/org.bootcinstaller.Installer.json >/dev/null
