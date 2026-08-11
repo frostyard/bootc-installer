@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "reviewWindow": 20,
+  "minimumSamples": 10,
+  "metrics": {
+    "pythonCoverage": {
+      "baseline": 51,
+      "minimum": 51,
+      "maximum": 90,
+      "increaseWhenPassRateAtLeast": 0.95,
+      "increaseBy": 1,
+      "decreaseAutomatically": false
+    },
+    "flakyTestRate": {
+      "warningAbove": 0.02,
+      "blockAbove": 0.05
+    },
+    "revertRate": {
+      "warningAbove": 0.05
+    }
+  },
+  "guardrails": {
+    "requireHumanApproval": true,
+    "openProposalInsteadOfDirectChange": true,
+    "neverRelaxSafetyGates": true,
+    "installationPathRequiresE2E": true
+  }
+}
