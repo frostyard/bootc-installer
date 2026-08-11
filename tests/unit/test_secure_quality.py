@@ -3,9 +3,8 @@
 import os
 import pathlib
 import tempfile
-import types
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from bootc_installer.core.system import Systeminfo
 from bootc_installer.utils.processor import Processor
