@@ -172,6 +172,18 @@ class TestSeparateDeviceAndPartn(unittest.TestCase):
         self.assertEqual(disk, "/dev/sda")
         self.assertIsNone(num)
 
+    def test_device_path_is_passed_as_single_argument(self):
+        device = "/dev/sda1; touch /tmp/should-not-exist"
+        with patch(
+            "subprocess.check_output",
+            return_value=self._mock_output("sda1", "sda", 1),
+        ) as check_output:
+            Diskutils.separate_device_and_partn(device)
+
+        check_output.assert_called_once_with(
+            ["lsblk", "--json", "-o", "NAME,PKNAME,PARTN", device]
+        )
+
     def test_multiple_devices_raises_value_error(self):
         payload = json.dumps({
             "blockdevices": [

@@ -21,7 +21,7 @@ class Diskutils:
     @staticmethod
     def separate_device_and_partn(part_dev: str) -> tuple[str, str | None]:
         info_json = subprocess.check_output(
-            "lsblk --json -o NAME,PKNAME,PARTN " + part_dev, shell=True
+            ["lsblk", "--json", "-o", "NAME,PKNAME,PARTN", part_dev]
         ).decode("utf-8")
         info_multiple = json.loads(info_json)["blockdevices"]
 
