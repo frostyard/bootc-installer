@@ -1,0 +1,15 @@
+# bootc-installer repository rules
+
+Read `AGENTS.md` before changing this repository; it is the authoritative guide
+for architecture, workflow, testing, and install-path verification.
+
+- Base feature and fix branches on `dev`, and target pull requests at `dev`.
+- Treat `fisherman/` as a separate Git repository. Commit and push fisherman
+  changes before committing the parent repository's submodule pointer.
+- Preserve the three-partition layout and `/var/fisherman-tmp` scratch path.
+- Add Python files to the applicable Meson `sources` list.
+- Keep tests synchronized with processor, wizard-final, and recipe-schema changes.
+- Run the narrowest relevant tests while iterating, then the full required gates.
+- For install-path changes listed in `AGENTS.md`, provide a complete installation
+  test; mocked unit or UI tests are not sufficient evidence.
+- Do not stage or overwrite unrelated worktree changes.

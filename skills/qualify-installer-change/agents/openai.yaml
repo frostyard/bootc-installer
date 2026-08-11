@@ -1,0 +1,4 @@
+interface:
+  display_name: "Qualify Installer Change"
+  short_description: "Choose and run bootc-installer verification gates"
+  default_prompt: "Qualify this bootc-installer change with the required lint, tests, and install-path evidence."
