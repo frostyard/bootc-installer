@@ -1,0 +1,1 @@
+{"date":"2026-08-10","scope":"fisherman-submodule","incorrect":"Commit fisherman source changes directly in the bootc-installer parent repository.","correct":"Commit and push changes in the fisherman submodule repository first, then commit only the updated submodule pointer in bootc-installer.","evidence":".gitmodules and AGENTS.md#making-changes-to-fisherman"}
